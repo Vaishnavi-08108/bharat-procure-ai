@@ -1,55 +1,48 @@
-from datetime import datetime, timezone
-from typing import List, Dict, Any
-from .schemas import (
-    TenderRequirements, BidderDocument, BidderVerdict, VerdictStatus
-)
-from .evaluator import run_all_checks
-from .auditor import run_cross_document_audit
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from enum import Enum
 
-def generate_verdict(
-    tender_checklist: Dict[str, Any],
-    bidder_documents: List[Dict[str, Any]],
-    audit_report: Dict[str, Any] = None,
+class VerdictStatus(str, Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    HUMAN_REVIEW = "HUMAN_REVIEW"
+
+class TenderRequirements(BaseModel):
+    tender_id: str
+    min_turnover_lakhs: float
+    min_experience_years: int
+    required_certificates: List[str]
+    max_bid_validity_days: int
+    emd_required_lakhs: float
+
+class BidderDocument(BaseModel):
+    bidder_id: str
+    bidder_name: str
+    annual_turnover_lakhs: Optional[float] = None
+    turnover_confidence: float = 1.0
+    years_of_experience: Optional[int] = None
+    experience_confidence: float = 1.0
+    certificates_present: dict[str, bool] = Field(default_factory=dict)
+    gst_registered_address: Optional[str] = None
+    pan_registered_address: Optional[str] = None
+    msme_registered_address: Optional[str] = None
+    gst_number: Optional[str] = None
+    pan_number: Optional[str] = None
+    emd_submitted_lakhs: Optional[float] = None
+
+class CheckResult(BaseModel):
+    check_name: str
+    status: VerdictStatus
+    reason: str
+    extracted_value: Optional[str] = None
+    required_value: Optional[str] = None
+    confidence: float = 1.0
+
+class BidderVerdict(BaseModel):
+    bidder_id: str
+    bidder_name: str
+    overall_status: VerdictStatus
+    checks: List[CheckResult]
+    audit_flags: List[str]
     model_version: str = "1.0.0"
-) -> BidderVerdict:
-    """
-    Member 2 Bridge: Converts Member 1's AI output into the Rule Engine format.
-    """
-    # 1. Convert Member 1's dicts into your Pydantic objects
-    rules = TenderRequirements(**tender_checklist)
-    
-    # Member 1 sends a list of docs (GST, PAN, etc). We merge them into one Bidder profile.
-    merged_data = {"certificates_present": {}}
-    for doc in bidder_documents:
-        merged_data.update(doc)
-        # If a doc type is present, mark it as True in certificates_present
-        doc_type = doc.get("doc_type", "").upper()
-        if doc_type:
-            merged_data["certificates_present"][doc_type] = True
-
-    bidder = BidderDocument(**merged_data)
-
-    # 2. Run your Engine Logic
-    checks = run_all_checks(bidder, rules)
-    
-    # 3. Use Member 1's audit report if provided, else run your own auditor
-    audit_flags = audit_report.get("flags", []) if audit_report else run_cross_document_audit(bidder)
-
-    # 4. Final Verdict Determination
-    statuses = [c.status for c in checks]
-    if VerdictStatus.FAIL in statuses:
-        overall = VerdictStatus.FAIL
-    elif VerdictStatus.HUMAN_REVIEW in statuses or len(audit_flags) > 0:
-        overall = VerdictStatus.HUMAN_REVIEW
-    else:
-        overall = VerdictStatus.PASS
-
-    return BidderVerdict(
-        bidder_id=bidder.bidder_id,
-        bidder_name=bidder.bidder_name,
-        overall_status=overall,
-        checks=checks,
-        audit_flags=audit_flags,
-        model_version=model_version,
-        timestamp=datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str

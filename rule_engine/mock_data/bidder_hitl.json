@@ -1,0 +1,15 @@
+{
+  "bidder_id": "BIDDER_003",
+  "bidder_name": "Rural Infra MSME Works",
+  "annual_turnover_lakhs": 600.0,
+  "turnover_confidence": 0.71,
+  "years_of_experience": 4,
+  "experience_confidence": 0.68,
+  "certificates_present": {"GST": true, "PAN": true, "MSME": true, "ISO_9001": true},
+  "gst_registered_address": "Village Rampura, Dist Nagpur, MH 440001",
+  "pan_registered_address": "B-12 Sadar Bazar, Nagpur 440001",
+  "msme_registered_address": "Village Rampura, Dist Nagpur, MH 440001",
+  "gst_number": "27ZZZZR9999Z1ZZ",
+  "pan_number": "ZZZZR9999Z",
+  "emd_submitted_lakhs": 10.0
+}

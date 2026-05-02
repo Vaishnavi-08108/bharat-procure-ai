@@ -1,0 +1,15 @@
+{
+  "bidder_id": "BIDDER_001",
+  "bidder_name": "Sharma Engineering Pvt. Ltd.",
+  "annual_turnover_lakhs": 750.0,
+  "turnover_confidence": 0.97,
+  "years_of_experience": 8,
+  "experience_confidence": 0.93,
+  "certificates_present": {"GST": true, "PAN": true, "MSME": true, "ISO_9001": true},
+  "gst_registered_address": "Plot 42, Industrial Area, Pune 411019",
+  "pan_registered_address": "Plot 42, Industrial Area, Pune 411019",
+  "msme_registered_address": "Plot 42, Industrial Area, Pune 411019",
+  "gst_number": "27AABCS1429B1ZB",
+  "pan_number": "AABCS1429B",
+  "emd_submitted_lakhs": 10.0
+}

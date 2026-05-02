@@ -1,0 +1,8 @@
+{
+  "tender_id": "CRPF-2024-001",
+  "min_turnover_lakhs": 500.0,
+  "min_experience_years": 3,
+  "required_certificates": ["GST", "PAN", "MSME", "ISO_9001"],
+  "max_bid_validity_days": 180,
+  "emd_required_lakhs": 10.0
+}

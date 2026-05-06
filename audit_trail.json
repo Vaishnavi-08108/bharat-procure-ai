@@ -1,0 +1,32 @@
+[
+  {
+    "entry_id": "LOG-0001",
+    "timestamp": "2026-05-06T22:58:01.042298",
+    "timestamp_readable": "06-May-2026 22:58:01 IST",
+    "tender_id": "CRPF/2024/001",
+    "bidder_name": "ABC Technologies",
+    "agent": "RuleEngine",
+    "action": "financial_rules_checked",
+    "input_summary": "Bidder: ABC Technologies",
+    "result_summary": "PASS",
+    "confidence_score": null,
+    "model_version": "deterministic-python",
+    "officer_id": null,
+    "entry_type": "AI"
+  },
+  {
+    "entry_id": "LOG-0002",
+    "timestamp": "2026-05-06T22:58:25.491875",
+    "timestamp_readable": "06-May-2026 22:58:25 IST",
+    "tender_id": "CRPF/2024/001",
+    "bidder_name": "ABC Technologies",
+    "agent": "RuleEngine",
+    "action": "financial_rules_checked",
+    "input_summary": "Bidder: ABC Technologies",
+    "result_summary": "PASS",
+    "confidence_score": null,
+    "model_version": "deterministic-python",
+    "officer_id": null,
+    "entry_type": "AI"
+  }
+]

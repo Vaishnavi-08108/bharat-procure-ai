@@ -16,7 +16,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+from agents.rule_engine import (
+    check_financial_requirements,
+    check_statutory_documents
+)
+from agents.audit_logger import (
+    log_action,
+    get_full_log,
+    get_log_for_tender,
+    get_log_for_bidder,
+    get_hitl_entries
+)
 # ─────────────────────────────────────────
 # In-memory store (fine for hackathon demo)
 # ─────────────────────────────────────────
@@ -232,20 +242,177 @@ async def test_blurry_image(file: UploadFile = File(...)):
 
 @app.get("/system-health")
 def system_health():
-    """Quick health check for judges to verify system is live."""
+    """Quick health check for judges."""
     import google.generativeai as genai
     import os
     key = os.getenv("GEMINI_API_KEY")
+    audit_entries = get_full_log()
     return {
         "status": "healthy",
-        "version": "2.0",
+        "version": "3.0",
         "gemini_key_configured": bool(key and len(key) > 10),
         "agents_loaded": [
             "tender_analyst",
-            "vision_specialist", 
+            "vision_specialist",
             "consistency_auditor",
-            "verdict_generator"
+            "verdict_generator",
+            "rule_engine",
+            "audit_logger"
         ],
-        "total_audit_log_entries": len(audit_log),
-        "endpoints": 9
+        "total_audit_log_entries": len(audit_entries),
+        "endpoints": 15
     }
+# ─────────────────────────────────────────
+# MEMBER 2 ENDPOINTS — Rule Engine + Audit
+# ─────────────────────────────────────────
+
+@app.post("/check-financial-rules")
+async def check_financial_rules(payload: dict):
+    """
+    Deterministic financial threshold checking.
+    No AI — pure Python math logic.
+
+    Expected payload:
+    {
+        "bidder_data": {
+            "annual_turnover_lakhs": 75,
+            "emd_amount": 100000,
+            "experience_years": 5
+        },
+        "tender_checklist": { ...output from /analyze-tender... }
+    }
+    """
+    bidder_data = payload.get("bidder_data", {})
+    tender_checklist = payload.get("tender_checklist", {})
+    bidder_name = payload.get("bidder_name", "Unknown")
+    tender_id = payload.get("tender_id", "Unknown")
+
+    result = check_financial_requirements(
+        bidder_data, tender_checklist
+    )
+
+    # Log it
+    log_action(
+        action="financial_rules_checked",
+        agent="RuleEngine",
+        input_summary=f"Bidder: {bidder_name}",
+        result_summary=result["financial_check_summary"]["overall"],
+        model_version="deterministic-python",
+        tender_id=tender_id,
+        bidder_name=bidder_name
+    )
+
+    return {"status": "success", "result": result}
+
+
+@app.post("/check-statutory-documents")
+async def check_statutory_docs(payload: dict):
+    """
+    Checks if all mandatory documents are present.
+
+    Expected payload:
+    {
+        "extracted_docs": [ ...outputs from /analyze-document... ],
+        "tender_checklist": { ...output from /analyze-tender... },
+        "bidder_name": "ABC Technologies",
+        "tender_id": "CRPF/2024/001"
+    }
+    """
+    extracted_docs = payload.get("extracted_docs", [])
+    tender_checklist = payload.get("tender_checklist", {})
+    bidder_name = payload.get("bidder_name", "Unknown")
+    tender_id = payload.get("tender_id", "Unknown")
+
+    result = check_statutory_documents(
+        extracted_docs, tender_checklist
+    )
+
+    log_action(
+        action="statutory_docs_checked",
+        agent="RuleEngine",
+        input_summary=f"Bidder: {bidder_name} · "
+                      f"Docs: {len(extracted_docs)}",
+        result_summary=result["statutory_check_summary"]["overall"],
+        model_version="deterministic-python",
+        tender_id=tender_id,
+        bidder_name=bidder_name
+    )
+
+    return {"status": "success", "result": result}
+
+
+@app.get("/audit-trail")
+def get_audit_trail():
+    """
+    Returns the FULL persistent audit trail from file.
+    Every AI + human decision ever made.
+    This is the government-grade audit log.
+    """
+    entries = get_full_log()
+    return {
+        "status": "success",
+        "total_entries": len(entries),
+        "entries": entries
+    }
+
+
+@app.get("/audit-trail/tender/{tender_id}")
+def get_audit_by_tender(tender_id: str):
+    """Returns all audit entries for a specific tender ID."""
+    entries = get_log_for_tender(tender_id)
+    return {
+        "tender_id": tender_id,
+        "total_entries": len(entries),
+        "entries": entries
+    }
+
+
+@app.get("/audit-trail/bidder/{bidder_name}")
+def get_audit_by_bidder(bidder_name: str):
+    """Returns all audit entries for a specific bidder."""
+    entries = get_log_for_bidder(bidder_name)
+    return {
+        "bidder_name": bidder_name,
+        "total_entries": len(entries),
+        "entries": entries
+    }
+
+
+@app.get("/audit-trail/hitl")
+def get_hitl_audit():
+    """Returns only entries that involved human review."""
+    entries = get_hitl_entries()
+    return {
+        "status": "success",
+        "total_hitl_entries": len(entries),
+        "entries": entries
+    }
+
+
+@app.post("/log-officer-action")
+async def log_officer_action(payload: dict):
+    """
+    Lets the dashboard log when an officer 
+    manually verifies or overrides an AI decision.
+
+    Expected payload:
+    {
+        "officer_id": "MAJ-RS-4521",
+        "action": "MANUAL_OVERRIDE_ACCEPT",
+        "bidder_name": "ABC Technologies",
+        "tender_id": "CRPF/2024/001",
+        "reason": "Physical document verified in person"
+    }
+    """
+    entry = log_action(
+        action=payload.get("action", "officer_action"),
+        agent="OfficerDashboard",
+        input_summary=payload.get("reason", "No reason provided"),
+        result_summary=f"Manual action by officer "
+                       f"{payload.get('officer_id')}",
+        model_version="human-officer",
+        officer_id=payload.get("officer_id"),
+        tender_id=payload.get("tender_id"),
+        bidder_name=payload.get("bidder_name")
+    )
+    return {"status": "success", "logged_entry": entry}

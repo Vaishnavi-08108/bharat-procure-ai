@@ -17,7 +17,7 @@ def _load_log() -> list:
     """Load existing audit log from file."""
     if os.path.exists(AUDIT_FILE):
         try:
-            with open(AUDIT_FILE, "r") as f:
+            with open(AUDIT_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return []
@@ -26,8 +26,8 @@ def _load_log() -> list:
 
 def _save_log(entries: list):
     """Save audit log to file."""
-    with open(AUDIT_FILE, "w") as f:
-        json.dump(entries, f, indent=2)
+    with open(AUDIT_FILE, "w", encoding="utf-8") as f:
+        json.dump(entries, f, indent=2, ensure_ascii=False)
 
 
 def log_action(

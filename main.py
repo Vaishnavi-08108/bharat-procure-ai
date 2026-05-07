@@ -1,14 +1,31 @@
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi.middleware.cors import CORSMiddleware
+import datetime
+import io
+import json
+import os
+import re
 from typing import List
-import PyPDF2, io, json, datetime
 
-from agents.tender_analyst import analyze_tender
-from agents.vision_specialist import extract_document_data
+import PyPDF2
+from fastapi import FastAPI, File, Form, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
+from agents.audit_logger import (
+    get_full_log,
+    get_hitl_entries,
+    get_log_for_bidder,
+    get_log_for_tender,
+    log_action,
+)
 from agents.consistency_auditor import audit_consistency
+from agents.rule_engine import (
+    check_financial_requirements,
+    check_statutory_documents,
+)
+from agents.tender_analyst import analyze_tender
 from agents.verdict_generator import generate_verdict
+from agents.vision_specialist import extract_document_data
 
-app = FastAPI(title="Bharat-Procure AI", version="2.0")
+app = FastAPI(title="Bharat-Procure AI", version="3.2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,118 +33,344 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from agents.rule_engine import (
-    check_financial_requirements,
-    check_statutory_documents
-)
-from agents.audit_logger import (
-    log_action,
-    get_full_log,
-    get_log_for_tender,
-    get_log_for_bidder,
-    get_hitl_entries
-)
-# ─────────────────────────────────────────
-# In-memory store (fine for hackathon demo)
-# ─────────────────────────────────────────
-audit_log = []  # stores every evaluation with timestamp
+
+OFFICER_PROFILE_FILE = "officer_profile.json"
+EVALUATION_HISTORY_FILE = "evaluation_history.json"
+LATEST_PIPELINE_FILE = "latest_pipeline_result.json"
+
+audit_log = []
+LATEST_PIPELINE_RESULT = None
 
 
-def log_entry(action: str, result: dict):
-    """Saves every AI decision to audit log."""
-    audit_log.append({
-        "timestamp": datetime.datetime.now().isoformat(),
-        "action": action,
-        "model": "gemini-1.5-flash",
-        "result_summary": str(result)[:200]  # first 200 chars
-    })
+def _read_json_file(path: str, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+            return default if payload is None else payload
+    except Exception:
+        return default
 
 
-# ─────────────────────────────────────────
-# EXISTING ENDPOINTS (from Day 1)
-# ─────────────────────────────────────────
+def _write_json_file(path: str, payload):
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, ensure_ascii=False)
+
+
+def _title_case_username(raw_username: str) -> str:
+    cleaned = re.sub(r"[_\-.]+", " ", raw_username).strip()
+    if not cleaned:
+        return "Officer"
+    return " ".join(part.capitalize() for part in cleaned.split())
+
+
+def _default_officer_profile() -> dict:
+    username = os.getenv("USERNAME") or os.getenv("USER") or "Officer"
+    display_name = _title_case_username(username)
+    officer_id = os.getenv("OFFICER_ID") or f"USR-{re.sub(r'[^A-Z0-9]', '', username.upper())[:12] or 'OFFICER'}"
+    return {
+        "officer_id": officer_id,
+        "name": display_name,
+        "role": os.getenv("OFFICER_ROLE", "Procurement Review Officer"),
+        "department": os.getenv("OFFICER_DEPARTMENT") or os.getenv("COMPUTERNAME") or "Local Review Cell",
+        "clearance_level": os.getenv("OFFICER_CLEARANCE", "L1"),
+        "source": "environment",
+        "last_updated": datetime.datetime.now().isoformat(),
+    }
+
+
+def get_officer_profile_data() -> dict:
+    profile = _read_json_file(OFFICER_PROFILE_FILE, {})
+    default_profile = _default_officer_profile()
+    merged = {**default_profile, **profile}
+    if merged != profile:
+        _write_json_file(OFFICER_PROFILE_FILE, merged)
+    return merged
+
+
+def save_officer_profile_data(payload: dict) -> dict:
+    current = get_officer_profile_data()
+    updated = {
+        **current,
+        "officer_id": payload.get("officer_id", current["officer_id"]).strip() or current["officer_id"],
+        "name": payload.get("name", current["name"]).strip() or current["name"],
+        "role": payload.get("role", current["role"]).strip() or current["role"],
+        "department": payload.get("department", current["department"]).strip() or current["department"],
+        "clearance_level": payload.get("clearance_level", current["clearance_level"]).strip() or current["clearance_level"],
+        "source": "settings",
+        "last_updated": datetime.datetime.now().isoformat(),
+    }
+    _write_json_file(OFFICER_PROFILE_FILE, updated)
+    return updated
+
+
+def _load_evaluation_history() -> list:
+    return _read_json_file(EVALUATION_HISTORY_FILE, [])
+
+
+def _save_evaluation_history(history: list):
+    _write_json_file(EVALUATION_HISTORY_FILE, history)
+
+
+def _build_evaluation_summary(pipeline_results: dict) -> dict:
+    verdict = pipeline_results.get("final_verdict", {})
+    documents = pipeline_results.get("extracted_documents", [])
+    review_items = verdict.get("human_review_items", [])
+    return {
+        "evaluation_id": f"EVAL-{len(_load_evaluation_history()) + 1:04d}",
+        "generated_at": pipeline_results.get("generated_at"),
+        "tender_id": pipeline_results.get("tender_id"),
+        "bidder_name": pipeline_results.get("bidder_name"),
+        "verdict": verdict.get("bidder_verdict"),
+        "score_percent": verdict.get("score_percent"),
+        "summary": verdict.get("summary"),
+        "open_review_count": len(review_items),
+        "open_review_items": review_items,
+        "missing_documents": pipeline_results.get("statutory_rules", {}).get("missing_documents", []),
+        "document_count": len(documents),
+        "document_types": [document.get("document_type") for document in documents if document.get("document_type")],
+        "latest_extracted_text": next(
+            (document.get("source_text_excerpt") for document in documents if document.get("source_text_excerpt")),
+            "",
+        ),
+    }
+
+
+def _append_evaluation_history(pipeline_results: dict):
+    history = _load_evaluation_history()
+    summary = _build_evaluation_summary(pipeline_results)
+    history.append(summary)
+    _save_evaluation_history(history[-50:])
+
+
+def log_entry(action: str, result: dict, model_version: str = "gemini-1.5-flash"):
+    audit_log.append(
+        {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "action": action,
+            "model": model_version,
+            "result_summary": str(result)[:200],
+        }
+    )
+
+
+def _read_pdf_text(content: bytes) -> str:
+    pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+    pages = []
+    for page in pdf_reader.pages:
+        pages.append(page.extract_text() or "")
+    return "\n".join(pages).strip()
+
+
+def _extract_tender_id(text: str, checklist: dict | None = None) -> str:
+    if checklist and checklist.get("tender_id"):
+        return checklist["tender_id"]
+    match = re.search(
+        r"(?:TENDER\s*(?:NO|NUMBER)|REFERENCE\s*(?:NO|NUMBER))\s*[:\-]\s*([A-Z0-9\/\-]+)",
+        text,
+        re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else "UNKNOWN"
+
+
+def _build_bidder_profile(extracted_docs: list[dict]) -> dict:
+    profile = {
+        "entity_name": None,
+        "annual_turnover_lakhs": None,
+        "emd_amount": None,
+        "experience_years": None,
+        "document_types": [],
+        "submitted_document_count": len(extracted_docs),
+    }
+    for document in extracted_docs:
+        key_fields = document.get("key_fields", {}) or {}
+        if not profile["entity_name"] and document.get("entity_name"):
+            profile["entity_name"] = document["entity_name"]
+        for field_name in ("annual_turnover_lakhs", "emd_amount", "experience_years"):
+            value = document.get(field_name, key_fields.get(field_name))
+            if value is not None and profile[field_name] is None:
+                profile[field_name] = value
+        if document.get("document_type"):
+            profile["document_types"].append(document["document_type"])
+    return profile
+
+
+def _parse_timestamp(raw_timestamp: str | None) -> datetime.datetime | None:
+    if not raw_timestamp:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(raw_timestamp)
+    except ValueError:
+        return None
+
+
+def _build_dashboard_metrics() -> dict:
+    entries = get_full_log()
+    history = _load_evaluation_history()
+    today = datetime.date.today()
+    unique_tenders = {
+        entry.get("tender_id")
+        for entry in entries
+        if entry.get("tender_id") and entry.get("tender_id") != "UNKNOWN"
+    }
+    unique_bidders_today = set()
+    for record in history:
+        record_time = _parse_timestamp(record.get("generated_at"))
+        bidder_name = record.get("bidder_name")
+        if record_time and record_time.date() == today and bidder_name:
+            unique_bidders_today.add(bidder_name)
+
+    latest_score = None
+    pending_review = len(get_hitl_entries())
+    if LATEST_PIPELINE_RESULT:
+        verdict = LATEST_PIPELINE_RESULT["pipeline_results"].get("final_verdict", {})
+        latest_score = verdict.get("score_percent")
+        pending_review = len(verdict.get("human_review_items", []))
+
+    return {
+        "active_tenders": len(unique_tenders) or len({record.get("tender_id") for record in history if record.get("tender_id")}),
+        "bidders_evaluated_today": len(unique_bidders_today),
+        "hitl_pending": pending_review,
+        "latest_score_percent": latest_score,
+        "audit_entries": len(entries),
+    }
+
+
+def _persist_pipeline_state(pipeline_results: dict):
+    global LATEST_PIPELINE_RESULT
+    LATEST_PIPELINE_RESULT = {
+        "generated_at": datetime.datetime.now().isoformat(),
+        "pipeline_results": pipeline_results,
+    }
+    _write_json_file(LATEST_PIPELINE_FILE, LATEST_PIPELINE_RESULT)
+
+
+LATEST_PIPELINE_RESULT = _read_json_file(LATEST_PIPELINE_FILE, None)
+
 
 @app.get("/")
 def root():
-    return {"status": "Bharat-Procure AI v2.0 is running ✅"}
+    return {"status": "Bharat-Procure AI v3.2 is running"}
+
+
+@app.get("/officer-profile")
+def get_officer_profile():
+    return {"status": "success", "profile": get_officer_profile_data()}
+
+
+@app.post("/officer-profile")
+async def update_officer_profile(payload: dict):
+    profile = save_officer_profile_data(payload)
+    return {"status": "success", "profile": profile}
+
+
+@app.get("/evaluations")
+def get_evaluations():
+    history = list(reversed(_load_evaluation_history()))
+    return {
+        "status": "success",
+        "total_evaluations": len(history),
+        "evaluations": history,
+        "latest_evaluation": LATEST_PIPELINE_RESULT,
+    }
 
 
 @app.post("/analyze-tender")
 async def analyze_tender_endpoint(file: UploadFile = File(...)):
-    """Upload tender PDF → get structured checklist."""
     content = await file.read()
     try:
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() or ""
-    except Exception as e:
-        return {"error": f"Could not read PDF: {str(e)}"}
-
+        text = _read_pdf_text(content)
+    except Exception as exc:
+        return {"error": f"Could not read PDF: {exc}"}
     if not text.strip():
-        return {"error": "PDF appears scanned/empty."}
+        return {"error": "PDF appears scanned or empty."}
 
     result = analyze_tender(text)
+    tender_id = _extract_tender_id(text, result)
     log_entry("analyze_tender", result)
+    log_action(
+        action="tender_analyzed",
+        agent="TenderAnalyst",
+        input_summary=file.filename or "Tender upload",
+        result_summary=result.get("tender_title", "Tender analyzed"),
+        model_version="gemini-1.5-flash/fallback",
+        tender_id=tender_id,
+    )
     return {"status": "success", "checklist": result}
 
 
 @app.post("/analyze-document")
 async def analyze_document_endpoint(
     file: UploadFile = File(...),
-    doc_type: str = Form(default="certificate")
+    doc_type: str = Form(default="certificate"),
 ):
-    """Upload bidder document image → get extracted fields."""
     content = await file.read()
-    result = extract_document_data(content, doc_type)
+    result = extract_document_data(
+        content,
+        doc_type,
+        mime_type=file.content_type,
+        filename=file.filename,
+    )
     log_entry("analyze_document", result)
+    log_action(
+        action="document_extracted",
+        agent="VisionSpecialist",
+        input_summary=f"{file.filename} ({doc_type})",
+        result_summary=result.get("document_type", "Document analyzed"),
+        confidence=result.get("confidence_score"),
+        model_version="gemini-1.5-flash/fallback",
+        bidder_name=result.get("entity_name"),
+    )
     return {
         "status": "success",
         "data": result,
-        "alert": "⚠️ Human review required!" if result.get("needs_human_review") else None
+        "alert": "Human review required." if result.get("needs_human_review") else None,
     }
 
 
-# ─────────────────────────────────────────
-# NEW DAY 2 ENDPOINTS
-# ─────────────────────────────────────────
-
 @app.post("/audit-consistency")
 async def audit_consistency_endpoint(documents: list):
-    """
-    Pass a list of extracted document dicts.
-    Returns cross-document consistency report.
-    """
     if not documents:
         return {"error": "No documents provided"}
-
     result = audit_consistency(documents)
-    log_entry("audit_consistency", result)
+    bidder_name = next((doc.get("entity_name") for doc in documents if doc.get("entity_name")), "UNKNOWN")
+    log_entry("audit_consistency", result, model_version="deterministic-python")
+    log_action(
+        action="consistency_checked",
+        agent="ConsistencyAuditor",
+        input_summary=f"Documents compared: {len(documents)}",
+        result_summary=result.get("overall_status", "UNKNOWN"),
+        model_version="deterministic-python",
+        bidder_name=bidder_name,
+    )
     return {"status": "success", "audit": result}
 
 
 @app.post("/generate-verdict")
 async def generate_verdict_endpoint(payload: dict):
-    """
-    Pass tender_checklist + bidder_documents + audit_report.
-    Returns final PASS/FAIL verdict.
-    
-    Expected payload:
-    {
-        "tender_checklist": {...},
-        "bidder_documents": [...],
-        "audit_report": {...}
-    }
-    """
     checklist = payload.get("tender_checklist")
     documents = payload.get("bidder_documents")
     audit = payload.get("audit_report")
-
     if not all([checklist, documents, audit]):
         return {"error": "Missing required fields: tender_checklist, bidder_documents, audit_report"}
 
     result = generate_verdict(checklist, documents, audit)
+    bidder_name = payload.get("bidder_name") or next(
+        (doc.get("entity_name") for doc in documents if doc.get("entity_name")),
+        "UNKNOWN",
+    )
+    tender_id = payload.get("tender_id") or checklist.get("tender_id", "UNKNOWN")
     log_entry("generate_verdict", result)
+    log_action(
+        action="verdict_generated",
+        agent="VerdictGenerator",
+        input_summary=f"Bidder: {bidder_name}",
+        result_summary=result.get("bidder_verdict", "UNKNOWN"),
+        model_version="gemini-1.5-flash/fallback",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
     return {"status": "success", "verdict": result}
 
 
@@ -135,121 +378,171 @@ async def generate_verdict_endpoint(payload: dict):
 async def full_pipeline(
     tender_pdf: UploadFile = File(...),
     bidder_docs: List[UploadFile] = File(...),
-    doc_types: str = Form(default="certificate,certificate,certificate")
+    doc_types: str = Form(default="certificate,certificate,certificate"),
 ):
-    """
-    ⭐ THE MAIN ENDPOINT ⭐
-    Upload everything at once:
-    - tender_pdf: the tender document
-    - bidder_docs: list of bidder document images
-    - doc_types: comma separated types eg. "GST,PAN,MSME"
-    
-    Returns complete evaluation in one call.
-    """
-
-    # ── Step 1: Analyze tender ──
     tender_content = await tender_pdf.read()
     try:
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(tender_content))
-        tender_text = ""
-        for page in pdf_reader.pages:
-            tender_text += page.extract_text() or ""
-    except Exception as e:
-        return {"error": f"Could not read tender PDF: {str(e)}"}
+        tender_text = _read_pdf_text(tender_content)
+    except Exception as exc:
+        return {"error": f"Could not read tender PDF: {exc}"}
+    if not tender_text:
+        return {"error": "Tender PDF appears empty."}
 
     tender_checklist = analyze_tender(tender_text)
-    log_entry("pipeline_step1_tender", tender_checklist)
+    tender_id = _extract_tender_id(tender_text, tender_checklist)
+    log_entry("pipeline_step_tender", tender_checklist)
+    log_action(
+        action="tender_analyzed",
+        agent="TenderAnalyst",
+        input_summary=tender_pdf.filename or "Tender upload",
+        result_summary=tender_checklist.get("tender_title", "Tender analyzed"),
+        model_version="gemini-1.5-flash/fallback",
+        tender_id=tender_id,
+    )
 
-    # ── Step 2: Analyze each bidder document ──
-    types_list = [t.strip() for t in doc_types.split(",")]
+    types_list = [item.strip() for item in doc_types.split(",") if item.strip()]
     extracted_docs = []
-
-    for i, doc_file in enumerate(bidder_docs):
+    for index, doc_file in enumerate(bidder_docs):
         doc_content = await doc_file.read()
-        doc_type = types_list[i] if i < len(types_list) else "certificate"
-        extracted = extract_document_data(doc_content, doc_type)
-        extracted["source_filename"] = doc_file.filename
+        doc_type = types_list[index] if index < len(types_list) else "certificate"
+        extracted = extract_document_data(
+            doc_content,
+            doc_type,
+            mime_type=doc_file.content_type,
+            filename=doc_file.filename,
+        )
         extracted_docs.append(extracted)
+        log_action(
+            action="document_extracted",
+            agent="VisionSpecialist",
+            input_summary=f"{doc_file.filename} ({doc_type})",
+            result_summary=extracted.get("document_type", "Document analyzed"),
+            confidence=extracted.get("confidence_score"),
+            model_version="gemini-1.5-flash/fallback",
+            tender_id=tender_id,
+            bidder_name=extracted.get("entity_name"),
+        )
 
-    log_entry("pipeline_step2_documents", {"count": len(extracted_docs)})
-
-    # ── Step 3: Consistency audit ──
+    bidder_profile = _build_bidder_profile(extracted_docs)
+    bidder_name = bidder_profile.get("entity_name") or "UNKNOWN"
     audit_report = audit_consistency(extracted_docs)
-    log_entry("pipeline_step3_audit", audit_report)
-
-    # ── Step 4: Generate final verdict ──
+    financial_rules = check_financial_requirements(bidder_profile, tender_checklist)
+    statutory_rules = check_statutory_documents(extracted_docs, tender_checklist)
     verdict = generate_verdict(tender_checklist, extracted_docs, audit_report)
-    log_entry("pipeline_step4_verdict", verdict)
+    verdict.setdefault("supporting_checks", {})
+    verdict["supporting_checks"]["financial_rules"] = financial_rules
+    verdict["supporting_checks"]["statutory_rules"] = statutory_rules
 
-    # ── Return everything ──
+    log_entry("pipeline_step_documents", {"count": len(extracted_docs)}, model_version="mixed")
+    log_entry("pipeline_step_audit", audit_report, model_version="deterministic-python")
+    log_entry("pipeline_step_verdict", verdict)
+
+    log_action(
+        action="consistency_checked",
+        agent="ConsistencyAuditor",
+        input_summary=f"Documents compared: {len(extracted_docs)}",
+        result_summary=audit_report.get("overall_status", "UNKNOWN"),
+        model_version="deterministic-python",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
+    log_action(
+        action="financial_rules_checked",
+        agent="RuleEngine",
+        input_summary=f"Bidder: {bidder_name}",
+        result_summary=financial_rules["financial_check_summary"]["overall"],
+        model_version="deterministic-python",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
+    log_action(
+        action="statutory_docs_checked",
+        agent="RuleEngine",
+        input_summary=f"Bidder: {bidder_name} | Docs: {len(extracted_docs)}",
+        result_summary=statutory_rules["statutory_check_summary"]["overall"],
+        model_version="deterministic-python",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
+    log_action(
+        action="verdict_generated",
+        agent="VerdictGenerator",
+        input_summary=f"Bidder: {bidder_name}",
+        result_summary=verdict.get("bidder_verdict", "UNKNOWN"),
+        model_version="gemini-1.5-flash/fallback",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
+
+    pipeline_results = {
+        "tender_id": tender_id,
+        "bidder_name": bidder_name,
+        "bidder_profile": bidder_profile,
+        "tender_checklist": tender_checklist,
+        "extracted_documents": extracted_docs,
+        "consistency_audit": audit_report,
+        "financial_rules": financial_rules,
+        "statutory_rules": statutory_rules,
+        "final_verdict": verdict,
+        "generated_at": datetime.datetime.now().isoformat(),
+    }
+    _persist_pipeline_state(pipeline_results)
+    _append_evaluation_history(pipeline_results)
+
     return {
         "status": "success",
-        "pipeline_results": {
-            "tender_checklist": tender_checklist,
-            "extracted_documents": extracted_docs,
-            "consistency_audit": audit_report,
-            "final_verdict": verdict
-        },
-        "audit_log_entries": len(audit_log)
+        "pipeline_results": pipeline_results,
+        "dashboard_metrics": _build_dashboard_metrics(),
+        "audit_log_entries": len(audit_log),
     }
 
 
 @app.get("/audit-log")
 def get_audit_log():
-    """
-    Returns full audit trail — every AI decision with timestamp.
-    This is what makes the system government-auditable.
-    """
     return {
         "total_entries": len(audit_log),
-        "log": audit_log
+        "log": audit_log,
     }
+
 
 @app.post("/test-blurry-image")
 async def test_blurry_image(file: UploadFile = File(...)):
-    """
-    Stress test endpoint - tests that blurry/bad images 
-    don't crash the system and trigger HITL correctly.
-    """
     content = await file.read()
-
-    # Intentionally corrupt the image slightly to simulate blur
-    import numpy as np
     import cv2
+    import numpy as np
 
     nparr = np.frombuffer(content, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
     if img is not None:
-        # Add artificial blur to simulate bad mobile photo
         blurred = cv2.GaussianBlur(img, (15, 15), 0)
-        _, buffer = cv2.imencode('.png', blurred)
+        _, buffer = cv2.imencode(".png", blurred)
         test_content = buffer.tobytes()
     else:
-        test_content = content  # use original if can't decode
+        test_content = content
 
-    result = extract_document_data(test_content, "stress_test")
-
+    result = extract_document_data(
+        test_content,
+        "stress_test",
+        mime_type=file.content_type,
+        filename=file.filename,
+    )
     return {
         "status": "success",
         "stress_test": True,
         "image_was_blurred": img is not None,
         "system_handled_gracefully": True,
         "result": result,
-        "hitl_triggered": result.get("needs_human_review", False)
+        "hitl_triggered": result.get("needs_human_review", False),
     }
 
 
 @app.get("/system-health")
 def system_health():
-    """Quick health check for judges."""
-    import google.generativeai as genai
-    import os
     key = os.getenv("GEMINI_API_KEY")
     audit_entries = get_full_log()
     return {
         "status": "healthy",
-        "version": "3.0",
+        "version": "3.2",
         "gemini_key_configured": bool(key and len(key) > 10),
         "agents_loaded": [
             "tender_analyst",
@@ -257,41 +550,35 @@ def system_health():
             "consistency_auditor",
             "verdict_generator",
             "rule_engine",
-            "audit_logger"
+            "audit_logger",
         ],
         "total_audit_log_entries": len(audit_entries),
-        "endpoints": 15
+        "endpoints": 19,
     }
-# ─────────────────────────────────────────
-# MEMBER 2 ENDPOINTS — Rule Engine + Audit
-# ─────────────────────────────────────────
+
+
+@app.get("/dashboard-state")
+def dashboard_state():
+    history = list(reversed(_load_evaluation_history()))
+    return {
+        "status": "success",
+        "metrics": _build_dashboard_metrics(),
+        "latest_evaluation": LATEST_PIPELINE_RESULT,
+        "recent_audit": list(reversed(get_full_log()[-20:])),
+        "officer_profile": get_officer_profile_data(),
+        "evaluation_history": history,
+        "system_health": system_health(),
+    }
+
 
 @app.post("/check-financial-rules")
 async def check_financial_rules(payload: dict):
-    """
-    Deterministic financial threshold checking.
-    No AI — pure Python math logic.
-
-    Expected payload:
-    {
-        "bidder_data": {
-            "annual_turnover_lakhs": 75,
-            "emd_amount": 100000,
-            "experience_years": 5
-        },
-        "tender_checklist": { ...output from /analyze-tender... }
-    }
-    """
     bidder_data = payload.get("bidder_data", {})
     tender_checklist = payload.get("tender_checklist", {})
-    bidder_name = payload.get("bidder_name", "Unknown")
-    tender_id = payload.get("tender_id", "Unknown")
+    bidder_name = payload.get("bidder_name") or bidder_data.get("entity_name") or "Unknown"
+    tender_id = payload.get("tender_id") or tender_checklist.get("tender_id", "Unknown")
 
-    result = check_financial_requirements(
-        bidder_data, tender_checklist
-    )
-
-    # Log it
+    result = check_financial_requirements(bidder_data, tender_checklist)
     log_action(
         action="financial_rules_checked",
         agent="RuleEngine",
@@ -299,120 +586,83 @@ async def check_financial_rules(payload: dict):
         result_summary=result["financial_check_summary"]["overall"],
         model_version="deterministic-python",
         tender_id=tender_id,
-        bidder_name=bidder_name
+        bidder_name=bidder_name,
     )
-
     return {"status": "success", "result": result}
 
 
 @app.post("/check-statutory-documents")
 async def check_statutory_docs(payload: dict):
-    """
-    Checks if all mandatory documents are present.
-
-    Expected payload:
-    {
-        "extracted_docs": [ ...outputs from /analyze-document... ],
-        "tender_checklist": { ...output from /analyze-tender... },
-        "bidder_name": "ABC Technologies",
-        "tender_id": "CRPF/2024/001"
-    }
-    """
     extracted_docs = payload.get("extracted_docs", [])
     tender_checklist = payload.get("tender_checklist", {})
     bidder_name = payload.get("bidder_name", "Unknown")
-    tender_id = payload.get("tender_id", "Unknown")
+    tender_id = payload.get("tender_id") or tender_checklist.get("tender_id", "Unknown")
 
-    result = check_statutory_documents(
-        extracted_docs, tender_checklist
-    )
-
+    result = check_statutory_documents(extracted_docs, tender_checklist)
     log_action(
         action="statutory_docs_checked",
         agent="RuleEngine",
-        input_summary=f"Bidder: {bidder_name} · "
-                      f"Docs: {len(extracted_docs)}",
+        input_summary=f"Bidder: {bidder_name} | Docs: {len(extracted_docs)}",
         result_summary=result["statutory_check_summary"]["overall"],
         model_version="deterministic-python",
         tender_id=tender_id,
-        bidder_name=bidder_name
+        bidder_name=bidder_name,
     )
-
     return {"status": "success", "result": result}
 
 
 @app.get("/audit-trail")
 def get_audit_trail():
-    """
-    Returns the FULL persistent audit trail from file.
-    Every AI + human decision ever made.
-    This is the government-grade audit log.
-    """
     entries = get_full_log()
     return {
         "status": "success",
         "total_entries": len(entries),
-        "entries": entries
+        "entries": entries,
     }
 
 
 @app.get("/audit-trail/tender/{tender_id}")
 def get_audit_by_tender(tender_id: str):
-    """Returns all audit entries for a specific tender ID."""
     entries = get_log_for_tender(tender_id)
     return {
         "tender_id": tender_id,
         "total_entries": len(entries),
-        "entries": entries
+        "entries": entries,
     }
 
 
 @app.get("/audit-trail/bidder/{bidder_name}")
 def get_audit_by_bidder(bidder_name: str):
-    """Returns all audit entries for a specific bidder."""
     entries = get_log_for_bidder(bidder_name)
     return {
         "bidder_name": bidder_name,
         "total_entries": len(entries),
-        "entries": entries
+        "entries": entries,
     }
 
 
 @app.get("/audit-trail/hitl")
 def get_hitl_audit():
-    """Returns only entries that involved human review."""
     entries = get_hitl_entries()
     return {
         "status": "success",
         "total_hitl_entries": len(entries),
-        "entries": entries
+        "entries": entries,
     }
 
 
 @app.post("/log-officer-action")
 async def log_officer_action(payload: dict):
-    """
-    Lets the dashboard log when an officer 
-    manually verifies or overrides an AI decision.
-
-    Expected payload:
-    {
-        "officer_id": "MAJ-RS-4521",
-        "action": "MANUAL_OVERRIDE_ACCEPT",
-        "bidder_name": "ABC Technologies",
-        "tender_id": "CRPF/2024/001",
-        "reason": "Physical document verified in person"
-    }
-    """
+    profile = get_officer_profile_data()
+    officer_id = payload.get("officer_id") or profile.get("officer_id")
     entry = log_action(
         action=payload.get("action", "officer_action"),
         agent="OfficerDashboard",
         input_summary=payload.get("reason", "No reason provided"),
-        result_summary=f"Manual action by officer "
-                       f"{payload.get('officer_id')}",
+        result_summary=f"Manual action by officer {officer_id}",
         model_version="human-officer",
-        officer_id=payload.get("officer_id"),
+        officer_id=officer_id,
         tender_id=payload.get("tender_id"),
-        bidder_name=payload.get("bidder_name")
+        bidder_name=payload.get("bidder_name"),
     )
-    return {"status": "success", "logged_entry": entry}
+    return {"status": "success", "logged_entry": entry, "officer_profile": profile}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bharat-Procure AI | Active Evals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./dashboard_theme.css">
+</head>
+<body data-page="active-evals">
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-logo"><div class="logo-text">Bharat-Procure AI</div><div class="logo-sub">MHA Procurement Portal</div></div>
+      <nav class="nav-list">
+        <a class="nav-item" data-page="dashboard" href="./dashboard_v1.html"><i data-lucide="layout-dashboard"></i> Dashboard</a>
+        <a class="nav-item" data-page="upload" href="./upload_tender.html"><i data-lucide="upload-cloud"></i> Upload Tender</a>
+        <a class="nav-item" data-page="bidders" href="./all_bidders.html"><i data-lucide="users"></i> All Bidders <span class="nav-badge blue" id="navBidderCount">Live</span></a>
+        <a class="nav-item" data-page="active-evals" href="./active_evals.html"><i data-lucide="zap"></i> Active Evals <span class="nav-badge" id="navEvalCount">Live</span></a>
+        <a class="nav-item" data-page="analytics" href="./analytics.html"><i data-lucide="bar-chart-2"></i> Analytics</a>
+        <a class="nav-item" data-page="audit" href="./audit_trail.html"><i data-lucide="shield"></i> Audit Trail</a>
+        <a class="nav-item" data-page="settings" href="./settings.html"><i data-lucide="settings"></i> Settings</a>
+        <a class="nav-item" data-page="help" href="./help.html"><i data-lucide="help-circle"></i> Help</a>
+      </nav>
+      <div class="sidebar-footer"><div class="status-title">AI Engine Status</div><div class="status-row"><span class="status-dot"></span> Review queue aware</div><div class="status-row"><span class="status-dot"></span> Human review counts</div><div class="status-row"><span class="status-dot"></span> Separate evaluation page</div></div>
+    </aside>
+    <div class="main-shell">
+      <header class="topbar"><div class="brand-mark">BHARAT-PROCURE AI</div><div class="health-pill"><span class="status-dot"></span> System Operational</div><div class="meta-pill" id="activeTenderLabel">Active: Awaiting upload</div><input class="search-input" id="globalSearch" placeholder="Search current page content..."><div class="topbar-right"><button class="icon-button" type="button"><i data-lucide="bell"></i><span class="notif-count" id="notifCount">0</span></button><div class="officer-card" id="officerCard"><div class="officer-avatar" id="officerAvatar">OF</div><div><div class="officer-name" id="officerName">Officer</div><div class="officer-meta" id="officerMeta">Loading profile...</div></div></div></div></header>
+      <section class="statsbar"><div class="stat-card"><div class="stat-label">Active Tenders</div><div class="stat-value" id="statActiveTenders">0</div></div><div class="stat-card"><div class="stat-label">Bidders Today</div><div class="stat-value" id="statBiddersToday">0</div></div><div class="stat-card"><div class="stat-label">HITL Pending</div><div class="stat-value" id="statHitlPending">0</div></div><div class="stat-card"><div class="stat-label">Latest Score</div><div class="stat-value" id="statLatestScore">--</div></div><div class="stat-card"><div class="stat-label">Audit Entries</div><div class="stat-value" id="statAuditEntries">0</div></div></section>
+      <main class="page-root" id="pageRoot"></main>
+    </div>
+  </div>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+  <script src="./dashboard_app.js"></script>
+</body>
+</html>

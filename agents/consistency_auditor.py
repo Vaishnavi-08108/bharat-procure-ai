@@ -1,73 +1,91 @@
-import google.generativeai as genai
-import os, json
-from dotenv import load_dotenv
+import re
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+def _normalize_value(value: str | None, field_name: str) -> str:
+    if not value:
+        return ""
+    normalized = value.lower()
+    if field_name == "entity_name":
+        normalized = normalized.replace("private limited", "pvt ltd")
+        normalized = normalized.replace("private ltd", "pvt ltd")
+    if field_name == "address":
+        normalized = re.sub(r"\b\d{6}\b", "", normalized)
+    return re.sub(r"[^a-z0-9]", "", normalized)
+
+
+def _field_values(documents: list[dict], field_name: str) -> list[str]:
+    values = []
+    for document in documents:
+        value = document.get(field_name)
+        if not value and isinstance(document.get("key_fields"), dict):
+            value = document["key_fields"].get(field_name)
+        if value:
+            values.append(str(value).strip())
+    return values
 
 
 def audit_consistency(documents: list[dict]) -> dict:
     """
-    Takes a list of extracted document data dicts.
-    Checks if key fields (name, address, GST number etc.) 
-    are consistent across all documents.
-    
-    Returns a report of matches, mismatches, and flags.
+    Deterministic cross-document consistency audit.
     """
-
     if not documents:
         return {"error": "No documents provided"}
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    checks = []
+    critical_flags = []
 
-    # Build a summary of all docs for Gemini to compare
-    doc_summary = json.dumps(documents, indent=2)
-
-    prompt = f"""
-You are a government procurement auditor doing a cross-document verification.
-
-Below are extracted fields from multiple documents submitted by a single bidder.
-Your job is to find inconsistencies — like if the company name on the GST certificate 
-is different from the PAN card, or if addresses don't match.
-
-Documents:
-{doc_summary}
-
-Return ONLY a JSON object with this structure:
-{{
-  "overall_status": "CONSISTENT" or "INCONSISTENT" or "NEEDS_REVIEW",
-  "checks": [
-    {{
-      "field": "entity_name",
-      "status": "MATCH" or "MISMATCH" or "MISSING",
-      "values_found": ["Name on GST", "Name on PAN"],
-      "note": "brief explanation"
-    }}
-  ],
-  "critical_flags": [
-    "describe any serious mismatch here"
-  ],
-  "needs_human_review": true or false
-}}
-
-Return ONLY valid JSON. No markdown. No explanation.
-"""
-
-    response = model.generate_content(prompt)
-    raw = response.text.strip()
-
-    # Clean markdown if present
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return {
-            "overall_status": "NEEDS_REVIEW",
-            "error": "Could not parse audit result",
-            "raw_response": raw,
-            "needs_human_review": True
+    for field_name, label in (("entity_name", "entity_name"), ("address", "address")):
+        values = _field_values(documents, field_name)
+        normalized_values = {
+            _normalize_value(value, field_name)
+            for value in values
+            if _normalize_value(value, field_name)
         }
+
+        if not values:
+            status = "MISSING"
+            note = f"No {label} found across submitted documents"
+        elif len(normalized_values) == 1:
+            status = "MATCH"
+            note = f"{label.replace('_', ' ').title()} matches across documents"
+        else:
+            status = "MISMATCH"
+            note = f"{label.replace('_', ' ').title()} differs across documents"
+            critical_flags.append(note)
+
+        checks.append(
+            {
+                "field": field_name,
+                "status": status,
+                "values_found": values,
+                "note": note,
+            }
+        )
+
+    low_confidence_docs = [
+        document.get("source_filename") or document.get("document_type") or "Unknown document"
+        for document in documents
+        if document.get("needs_human_review")
+    ]
+    if low_confidence_docs:
+        critical_flags.append(
+            "Low confidence documents need officer review: " + ", ".join(low_confidence_docs)
+        )
+
+    has_mismatch = any(check["status"] == "MISMATCH" for check in checks)
+    has_missing = any(check["status"] == "MISSING" for check in checks)
+    needs_human_review = bool(low_confidence_docs or has_missing or has_mismatch)
+
+    if has_mismatch:
+        overall_status = "INCONSISTENT"
+    elif needs_human_review:
+        overall_status = "NEEDS_REVIEW"
+    else:
+        overall_status = "CONSISTENT"
+
+    return {
+        "overall_status": overall_status,
+        "checks": checks,
+        "critical_flags": critical_flags,
+        "needs_human_review": needs_human_review,
+    }

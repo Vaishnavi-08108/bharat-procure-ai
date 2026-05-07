@@ -7,6 +7,18 @@ This is intentional: numbers should never be left to AI judgment.
 """
 
 from datetime import datetime
+import re
+
+
+def _normalize_doc_label(value: str) -> str:
+    cleaned = re.sub(r"\([^)]*\)", "", value.lower())
+    cleaned = cleaned.replace("certificate", "")
+    cleaned = cleaned.replace("card", "")
+    cleaned = cleaned.replace("of the firm", "")
+    cleaned = cleaned.replace("mandatory", "")
+    cleaned = cleaned.replace("if applicable", "")
+    cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned)
+    return cleaned.strip()
 
 
 def check_financial_requirements(
@@ -172,11 +184,12 @@ def check_statutory_documents(
     missing = []
 
     for req_doc in required_docs:
-        req_lower = req_doc.lower()
+        req_lower = _normalize_doc_label(req_doc)
 
         # Check if any extracted doc matches
         matched = any(
-            req_lower in found.lower() or found.lower() in req_lower
+            req_lower in _normalize_doc_label(found)
+            or _normalize_doc_label(found) in req_lower
             for found in found_doc_types
         )
 
@@ -184,8 +197,8 @@ def check_statutory_documents(
             # Find the matching doc to check validity
             matching_doc = next(
                 (d for d in extracted_docs
-                 if req_lower in d.get("document_type", "").lower()
-                 or d.get("document_type", "").lower() in req_lower),
+                 if req_lower in _normalize_doc_label(d.get("document_type", ""))
+                 or _normalize_doc_label(d.get("document_type", "")) in req_lower),
                 None
             )
 
@@ -193,12 +206,22 @@ def check_statutory_documents(
             validity = None
             if matching_doc:
                 validity = matching_doc.get("validity_date")
+                doc_type = matching_doc.get("document_type", "").lower()
+                status_text = str(matching_doc.get("key_fields", {}).get("status", "")).lower()
 
             status = "PRESENT"
             note = "Document found and verified"
 
             # Simple expiry check
-            if validity:
+            should_check_expiry = any(
+                keyword in doc_type
+                for keyword in ["solvency", "license", "permit", "iso", "clearance"]
+            )
+            if "expired" in status_text or "inactive" in status_text:
+                status = "EXPIRED"
+                note = f"Document status is {status_text}"
+                missing.append(f"{req_doc} â€” EXPIRED")
+            elif validity and should_check_expiry:
                 try:
                     # Try common date formats
                     for fmt in ["%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y"]:

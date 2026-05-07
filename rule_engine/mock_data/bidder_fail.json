@@ -1,0 +1,15 @@
+{
+  "bidder_id": "BIDDER_002",
+  "bidder_name": "Gupta Trading Co.",
+  "annual_turnover_lakhs": 200.0,
+  "turnover_confidence": 0.95,
+  "years_of_experience": 5,
+  "experience_confidence": 0.90,
+  "certificates_present": {"GST": true, "PAN": true, "MSME": false, "ISO_9001": false},
+  "gst_registered_address": "12 MG Road, Delhi 110001",
+  "pan_registered_address": "12 MG Road, Delhi 110001",
+  "msme_registered_address": null,
+  "gst_number": "07AAACG1234C1ZA",
+  "pan_number": "AAACG1234C",
+  "emd_submitted_lakhs": 10.0
+}

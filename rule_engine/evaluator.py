@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List
 from .schemas import (
     TenderRequirements, BidderDocument, CheckResult, VerdictStatus
 )

@@ -1,4 +1,4 @@
-import json, pytest
+import json
 from rule_engine.schemas import TenderRequirements, BidderDocument
 from rule_engine.verdict import generate_verdict
 

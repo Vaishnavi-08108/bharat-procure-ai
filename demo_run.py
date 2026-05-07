@@ -15,13 +15,12 @@ for filename in ["bidder_pass.json", "bidder_fail.json", "bidder_hitl.json"]:
 
     print(f"\n{'='*50}")
     print(f"Bidder : {verdict.bidder_name}")
-    print(f"Status : {verdict.overall_status.value}"
-    )
-    print(f"Checks :")
+    print(f"Status : {verdict.overall_status.value}")
+    print("Checks :")
     for check in verdict.checks:
         icon = "✅" if check.status == "PASS" else "❌" if check.status == "FAIL" else "⚠️"
         print(f"  {icon} {check.check_name}: {check.reason}")
     if verdict.audit_flags:
-        print(f"Audit Flags:")
+        print("Audit Flags:")
         for flag in verdict.audit_flags:
             print(f"  🚩 {flag}")

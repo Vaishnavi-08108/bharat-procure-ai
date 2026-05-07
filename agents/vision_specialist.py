@@ -4,14 +4,28 @@ import json
 import os
 import re
 
-import cv2
-import google.generativeai as genai
-import numpy as np
 import PyPDF2
-from dotenv import load_dotenv
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+if genai is not None:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 def enhance_image(image_bytes: bytes) -> bytes:
@@ -19,6 +33,9 @@ def enhance_image(image_bytes: bytes) -> bytes:
     Uses OpenCV to fix blurry/skewed photos from mobile cameras.
     Returns cleaned image bytes.
     """
+    if cv2 is None or np is None:
+        return image_bytes
+
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
@@ -117,17 +134,54 @@ def _extract_address(text: str) -> str | None:
     )
 
 
+def _clean_entity_name(candidate: str | None) -> str | None:
+    if not candidate:
+        return None
+
+    cleaned = re.sub(r"\s+", " ", candidate).strip(" :;-_")
+    lowered = cleaned.lower()
+    invalid_labels = {
+        "date of birth",
+        "date of birth:",
+        "dob",
+        "father's name",
+        "father name",
+        "address",
+        "type",
+        "status",
+        "name",
+        "trade name",
+        "legal name",
+    }
+    invalid_phrases = (
+        "standard bidding document",
+        "procurement of civil works",
+        "government of india",
+        "instructions to bidders",
+        "date of birth",
+    )
+
+    if not cleaned or cleaned in {"_", "__", "___"}:
+        return None
+    if lowered in invalid_labels or any(phrase in lowered for phrase in invalid_phrases):
+        return None
+    if cleaned.endswith(":") or not re.search(r"[A-Za-z0-9]", cleaned):
+        return None
+    return cleaned
+
+
 def _extract_entity_name(text: str) -> str | None:
-    return _first_match(
+    candidate = _first_match(
         [
-            r"Legal Name\s*[:\-]\s*(.+?)(?=\s+(?:Trade Name|Address|Date of Registration|Status)\s*:|$)",
-            r"Name of Enterprise\s*[:\-]\s*(.+?)(?=\s+(?:Type|Address|Date of Registration|Category)\s*:|$)",
-            r"Trade Name\s*[:\-]\s*(.+?)(?=\s+(?:Address|Date of Registration|Status)\s*:|$)",
-            r"Name\s*[:\-]\s*(.+?)(?=\s+(?:Date of Incorporation|Father's Name|Address|Type)\s*:|$)",
+            r"Legal Name\s*[:\-]\s*(.+?)(?=\s+(?:Trade Name|Address|Date of Registration|Date of Birth|Status)\s*:|$)",
+            r"Name of Enterprise\s*[:\-]\s*(.+?)(?=\s+(?:Type|Address|Date of Registration|Date of Birth|Category)\s*:|$)",
+            r"Trade Name\s*[:\-]\s*(.+?)(?=\s+(?:Address|Date of Registration|Date of Birth|Status)\s*:|$)",
+            r"Name\s*[:\-]\s*(.+?)(?=\s+(?:Date of Incorporation|Date of Birth|DOB|Father's Name|Address|Type)\s*:|$)",
             r"M/s\s+([A-Za-z0-9&.,() \-]+)",
         ],
         text,
     )
+    return _clean_entity_name(candidate)
 
 
 def _extract_registration_number(text: str, document_type: str) -> str | None:
@@ -295,7 +349,7 @@ def extract_document_data(
 
     enhanced = enhance_image(document_bytes)
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    if not api_key or genai is None:
         return _build_fallback_image_result(doc_type, filename, mime_type)
 
     b64_image = base64.b64encode(enhanced).decode("utf-8")

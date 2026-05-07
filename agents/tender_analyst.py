@@ -2,11 +2,20 @@ import json
 import os
 import re
 
-import google.generativeai as genai
-from dotenv import load_dotenv
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+if genai is not None:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 def _clean_model_json(raw: str) -> str:
@@ -134,7 +143,7 @@ def analyze_tender(text: str) -> dict:
         return fallback
 
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    if not api_key or genai is None:
         return fallback
 
     model = genai.GenerativeModel("gemini-1.5-flash")

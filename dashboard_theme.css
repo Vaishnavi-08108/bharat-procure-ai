@@ -516,6 +516,17 @@ a {
   overflow-x: auto;
 }
 
+.table-doc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.table-doc-links a {
+  text-decoration: none;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

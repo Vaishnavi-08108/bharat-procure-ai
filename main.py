@@ -4,10 +4,12 @@ import json
 import os
 import re
 from typing import List
+from urllib.parse import quote
 
 import PyPDF2
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from agents.audit_logger import (
     get_full_log,
@@ -34,12 +36,124 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OFFICER_PROFILE_FILE = "officer_profile.json"
-EVALUATION_HISTORY_FILE = "evaluation_history.json"
-LATEST_PIPELINE_FILE = "latest_pipeline_result.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+OFFICER_PROFILE_FILE = os.path.join(BASE_DIR, "officer_profile.json")
+EVALUATION_HISTORY_FILE = os.path.join(BASE_DIR, "evaluation_history.json")
+LATEST_PIPELINE_FILE = os.path.join(BASE_DIR, "latest_pipeline_result.json")
+UPLOADS_DIR = os.path.join(BASE_DIR, "uploaded_documents")
+FRONTEND_FILES = {
+    "dashboard_v1.html",
+    "upload_tender.html",
+    "all_bidders.html",
+    "active_evals.html",
+    "analytics.html",
+    "audit_trail.html",
+    "settings.html",
+    "help.html",
+    "dashboard_app.js",
+    "dashboard_theme.css",
+}
 
 audit_log = []
 LATEST_PIPELINE_RESULT = None
+
+
+def _safe_filename(filename: str | None, fallback: str) -> str:
+    raw_name = os.path.basename(filename or fallback).strip()
+    safe_name = re.sub(r"[^A-Za-z0-9._ -]", "_", raw_name)
+    safe_name = re.sub(r"\s+", "_", safe_name).strip("._ ")
+    return safe_name[:120] or fallback
+
+
+def _safe_storage_id(value: str | None) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]", "_", value or "UNKNOWN").strip("_")
+    return cleaned[:60] or "UNKNOWN"
+
+
+def _save_uploaded_file(run_id: str, filename: str | None, content: bytes, prefix: str) -> dict:
+    os.makedirs(os.path.join(UPLOADS_DIR, run_id), exist_ok=True)
+    safe_name = _safe_filename(filename, f"{prefix}.bin")
+    stored_name = _safe_filename(f"{prefix}_{safe_name}", f"{prefix}.bin")
+    stored_path = os.path.join(UPLOADS_DIR, run_id, stored_name)
+    with open(stored_path, "wb") as handle:
+        handle.write(content)
+    return {
+        "original_filename": filename or safe_name,
+        "stored_filename": stored_name,
+        "saved_path": stored_path,
+        "saved_url": f"/uploads/{quote(run_id)}/{quote(stored_name)}",
+        "size_bytes": len(content),
+    }
+
+
+def _is_valid_bidder_name(value: str | None) -> bool:
+    if not value:
+        return False
+    cleaned = value.strip(" :;-_")
+    lowered = cleaned.lower()
+    invalid_values = {"unknown", "date of birth", "dob", "name", "address", "status", "type"}
+    invalid_phrases = (
+        "date of birth",
+        "standard bidding document",
+        "procurement of civil works",
+        "instructions to bidders",
+        "government of india",
+    )
+    return bool(
+        cleaned
+        and lowered not in invalid_values
+        and not any(phrase in lowered for phrase in invalid_phrases)
+        and re.search(r"[A-Za-z0-9]", cleaned)
+    )
+
+
+def _bidder_label_from_filename(filename: str | None) -> str:
+    safe_name = _safe_filename(filename, "document.pdf")
+    label = os.path.splitext(safe_name)[0]
+    label = re.sub(r"^(?:bidder|document|doc|file)[_-]*\d*[_-]*", "", label, flags=re.IGNORECASE)
+    label = re.sub(r"[_-]+", " ", label).strip()
+    if not label:
+        return f"Unidentified bidder ({safe_name})"
+    return label.title()
+
+
+def _fallback_bidder_name(extracted_docs: list[dict]) -> str:
+    for document in extracted_docs:
+        filename = document.get("source_filename") or document.get("saved_file", {}).get("original_filename")
+        if filename:
+            return _bidder_label_from_filename(filename)
+    return "Unidentified bidder"
+
+
+def _display_bidder_name_from_record(record: dict) -> str:
+    if _is_valid_bidder_name(record.get("bidder_name")):
+        return record["bidder_name"].strip(" :;-_")
+
+    saved_documents = record.get("saved_documents") or []
+    if saved_documents:
+        filename = saved_documents[0].get("original_filename") or saved_documents[0].get("stored_filename")
+        return _bidder_label_from_filename(filename)
+
+    extracted_documents = record.get("extracted_documents") or []
+    if extracted_documents:
+        return _fallback_bidder_name(extracted_documents)
+
+    return "Unidentified bidder"
+
+
+def _normalize_evaluation_record(record: dict) -> dict:
+    normalized = {**record}
+    display_name = _display_bidder_name_from_record(normalized)
+    normalized["bidder_name"] = display_name
+    if normalized.get("summary"):
+        normalized["summary"] = re.sub(
+            r"^(?:UNKNOWN|Date of birth:|Bidder)\s+scored",
+            f"{display_name} scored",
+            normalized["summary"],
+            flags=re.IGNORECASE,
+        )
+    return normalized
 
 
 def _read_json_file(path: str, default):
@@ -123,6 +237,7 @@ def _build_evaluation_summary(pipeline_results: dict) -> dict:
         "tender_id": pipeline_results.get("tender_id"),
         "bidder_name": pipeline_results.get("bidder_name"),
         "verdict": verdict.get("bidder_verdict"),
+        "bid_amount": pipeline_results.get("bid_amount"),
         "score_percent": verdict.get("score_percent"),
         "summary": verdict.get("summary"),
         "open_review_count": len(review_items),
@@ -130,6 +245,9 @@ def _build_evaluation_summary(pipeline_results: dict) -> dict:
         "missing_documents": pipeline_results.get("statutory_rules", {}).get("missing_documents", []),
         "document_count": len(documents),
         "document_types": [document.get("document_type") for document in documents if document.get("document_type")],
+        "upload_run_id": pipeline_results.get("upload_run_id"),
+        "saved_tender": pipeline_results.get("saved_tender"),
+        "saved_documents": [document.get("saved_file") for document in documents if document.get("saved_file")],
         "latest_extracted_text": next(
             (document.get("source_text_excerpt") for document in documents if document.get("source_text_excerpt")),
             "",
@@ -138,10 +256,22 @@ def _build_evaluation_summary(pipeline_results: dict) -> dict:
 
 
 def _append_evaluation_history(pipeline_results: dict):
-    history = _load_evaluation_history()
+    history = [_normalize_evaluation_record(record) for record in _load_evaluation_history()]
     summary = _build_evaluation_summary(pipeline_results)
     history.append(summary)
     _save_evaluation_history(history[-50:])
+
+
+def _normalize_manual_verdict(verdict: str | None) -> str:
+    normalized = re.sub(r"\s+", "_", (verdict or "REFER_TO_COMMITTEE").strip().upper())
+    if normalized == "REVIEW":
+        return "REFER_TO_COMMITTEE"
+    return normalized if normalized in {"PASS", "FAIL", "REFER_TO_COMMITTEE"} else "REFER_TO_COMMITTEE"
+
+
+def _build_manual_bidder_summary(bidder_name: str, tender_id: str, bid_amount: str) -> str:
+    amount_text = f" Bid amount: Rs. {bid_amount}." if bid_amount else " Bid amount not recorded."
+    return f"Manual bidder record for {bidder_name} under tender {tender_id}.{amount_text}"
 
 
 def log_entry(action: str, result: dict, model_version: str = "gemini-1.5-flash"):
@@ -185,8 +315,8 @@ def _build_bidder_profile(extracted_docs: list[dict]) -> dict:
     }
     for document in extracted_docs:
         key_fields = document.get("key_fields", {}) or {}
-        if not profile["entity_name"] and document.get("entity_name"):
-            profile["entity_name"] = document["entity_name"]
+        if not profile["entity_name"] and _is_valid_bidder_name(document.get("entity_name")):
+            profile["entity_name"] = document["entity_name"].strip(" :;-_")
         for field_name in ("annual_turnover_lakhs", "emd_amount", "experience_years"):
             value = document.get(field_name, key_fields.get(field_name))
             if value is not None and profile[field_name] is None:
@@ -217,7 +347,7 @@ def _build_dashboard_metrics() -> dict:
     unique_bidders_today = set()
     for record in history:
         record_time = _parse_timestamp(record.get("generated_at"))
-        bidder_name = record.get("bidder_name")
+        bidder_name = _display_bidder_name_from_record(record)
         if record_time and record_time.date() == today and bidder_name:
             unique_bidders_today.add(bidder_name)
 
@@ -251,7 +381,33 @@ LATEST_PIPELINE_RESULT = _read_json_file(LATEST_PIPELINE_FILE, None)
 
 @app.get("/")
 def root():
-    return {"status": "Bharat-Procure AI v3.2 is running"}
+    return {
+        "status": "Bharat-Procure AI v3.2 is running",
+        "dashboard_url": "/ui/dashboard_v1.html",
+        "upload_url": "/ui/upload_tender.html",
+    }
+
+
+@app.get("/ui/{filename}", include_in_schema=False)
+def serve_frontend_file(filename: str):
+    if filename not in FRONTEND_FILES:
+        raise HTTPException(status_code=404, detail="Frontend file not found")
+    return FileResponse(os.path.join(BASE_DIR, filename))
+
+
+@app.get("/uploads/{run_id}/{filename}", include_in_schema=False)
+def serve_uploaded_file(run_id: str, filename: str):
+    safe_run_id = _safe_storage_id(run_id)
+    safe_filename = _safe_filename(filename, "document.bin")
+    if safe_run_id != run_id or safe_filename != filename:
+        raise HTTPException(status_code=404, detail="Uploaded file not found")
+
+    upload_path = os.path.abspath(os.path.join(UPLOADS_DIR, safe_run_id, safe_filename))
+    upload_root = os.path.abspath(UPLOADS_DIR)
+    if not upload_path.startswith(upload_root + os.sep) or not os.path.exists(upload_path):
+        raise HTTPException(status_code=404, detail="Uploaded file not found")
+
+    return FileResponse(upload_path, filename=safe_filename)
 
 
 @app.get("/officer-profile")
@@ -267,12 +423,92 @@ async def update_officer_profile(payload: dict):
 
 @app.get("/evaluations")
 def get_evaluations():
-    history = list(reversed(_load_evaluation_history()))
+    history = list(reversed([_normalize_evaluation_record(record) for record in _load_evaluation_history()]))
+    latest_evaluation = None
+    if LATEST_PIPELINE_RESULT:
+        latest_evaluation = {
+            **LATEST_PIPELINE_RESULT,
+            "pipeline_results": _normalize_evaluation_record(LATEST_PIPELINE_RESULT.get("pipeline_results", {})),
+        }
     return {
         "status": "success",
         "total_evaluations": len(history),
         "evaluations": history,
-        "latest_evaluation": LATEST_PIPELINE_RESULT,
+        "latest_evaluation": latest_evaluation,
+    }
+
+
+@app.post("/manual-bidders")
+async def add_manual_bidder(
+    bidder_name: str = Form(...),
+    tender_id: str = Form(...),
+    verdict: str = Form(default="REFER_TO_COMMITTEE"),
+    bid_amount: str = Form(default=""),
+    documents: List[UploadFile] | None = File(default=None),
+):
+    bidder_name = bidder_name.strip()
+    tender_id = tender_id.strip()
+    bid_amount = bid_amount.strip()
+    normalized_verdict = _normalize_manual_verdict(verdict)
+
+    if not bidder_name:
+        raise HTTPException(status_code=400, detail="Bidder name is required")
+    if not tender_id:
+        raise HTTPException(status_code=400, detail="Tender name or ID is required")
+
+    upload_run_id = f"manual_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{_safe_storage_id(tender_id)}"
+    saved_documents = []
+    for index, document in enumerate(documents or []):
+        content = await document.read()
+        if not content:
+            continue
+        saved_documents.append(
+            _save_uploaded_file(
+                upload_run_id,
+                document.filename,
+                content,
+                f"manual_{index + 1:02d}",
+            )
+        )
+
+    review_items = ["Manual review requested"] if normalized_verdict == "REFER_TO_COMMITTEE" else []
+    history = [_normalize_evaluation_record(record) for record in _load_evaluation_history()]
+    record = {
+        "evaluation_id": f"BID-{len(history) + 1:04d}",
+        "source": "manual_bidder_entry",
+        "generated_at": datetime.datetime.now().isoformat(),
+        "tender_id": tender_id,
+        "bidder_name": bidder_name,
+        "verdict": normalized_verdict,
+        "bid_amount": bid_amount,
+        "score_percent": None,
+        "summary": _build_manual_bidder_summary(bidder_name, tender_id, bid_amount),
+        "open_review_count": len(review_items),
+        "open_review_items": review_items,
+        "missing_documents": [],
+        "document_count": len(saved_documents),
+        "document_types": ["Manual Upload"] if saved_documents else [],
+        "upload_run_id": upload_run_id,
+        "saved_documents": saved_documents,
+        "latest_extracted_text": "",
+    }
+    history.append(record)
+    _save_evaluation_history(history[-50:])
+
+    log_action(
+        action="manual_bidder_added",
+        agent="OfficerDashboard",
+        input_summary=f"{bidder_name} | Tender: {tender_id}",
+        result_summary=f"{normalized_verdict} | Amount: {bid_amount or 'Not recorded'}",
+        model_version="human-officer",
+        tender_id=tender_id,
+        bidder_name=bidder_name,
+    )
+
+    return {
+        "status": "success",
+        "record": _normalize_evaluation_record(record),
+        "dashboard_metrics": _build_dashboard_metrics(),
     }
 
 
@@ -390,6 +626,13 @@ async def full_pipeline(
 
     tender_checklist = analyze_tender(tender_text)
     tender_id = _extract_tender_id(tender_text, tender_checklist)
+    upload_run_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{_safe_storage_id(tender_id)}"
+    saved_tender = _save_uploaded_file(
+        upload_run_id,
+        tender_pdf.filename,
+        tender_content,
+        "tender",
+    )
     log_entry("pipeline_step_tender", tender_checklist)
     log_action(
         action="tender_analyzed",
@@ -405,12 +648,21 @@ async def full_pipeline(
     for index, doc_file in enumerate(bidder_docs):
         doc_content = await doc_file.read()
         doc_type = types_list[index] if index < len(types_list) else "certificate"
+        saved_file = _save_uploaded_file(
+            upload_run_id,
+            doc_file.filename,
+            doc_content,
+            f"bidder_{index + 1:02d}",
+        )
         extracted = extract_document_data(
             doc_content,
             doc_type,
             mime_type=doc_file.content_type,
             filename=doc_file.filename,
         )
+        extracted["saved_file"] = saved_file
+        extracted["saved_url"] = saved_file["saved_url"]
+        extracted["saved_size_bytes"] = saved_file["size_bytes"]
         extracted_docs.append(extracted)
         log_action(
             action="document_extracted",
@@ -421,14 +673,17 @@ async def full_pipeline(
             model_version="gemini-1.5-flash/fallback",
             tender_id=tender_id,
             bidder_name=extracted.get("entity_name"),
-        )
+    )
 
     bidder_profile = _build_bidder_profile(extracted_docs)
-    bidder_name = bidder_profile.get("entity_name") or "UNKNOWN"
+    bidder_name = bidder_profile.get("entity_name") or _fallback_bidder_name(extracted_docs)
+    bidder_profile["entity_name"] = bidder_name
     audit_report = audit_consistency(extracted_docs)
     financial_rules = check_financial_requirements(bidder_profile, tender_checklist)
     statutory_rules = check_statutory_documents(extracted_docs, tender_checklist)
     verdict = generate_verdict(tender_checklist, extracted_docs, audit_report)
+    if verdict.get("summary", "").startswith("Bidder scored"):
+        verdict["summary"] = verdict["summary"].replace("Bidder scored", f"{bidder_name} scored", 1)
     verdict.setdefault("supporting_checks", {})
     verdict["supporting_checks"]["financial_rules"] = financial_rules
     verdict["supporting_checks"]["statutory_rules"] = statutory_rules
@@ -475,6 +730,8 @@ async def full_pipeline(
     )
 
     pipeline_results = {
+        "upload_run_id": upload_run_id,
+        "saved_tender": saved_tender,
         "tender_id": tender_id,
         "bidder_name": bidder_name,
         "bidder_profile": bidder_profile,
@@ -553,17 +810,23 @@ def system_health():
             "audit_logger",
         ],
         "total_audit_log_entries": len(audit_entries),
-        "endpoints": 19,
+        "endpoints": 20,
     }
 
 
 @app.get("/dashboard-state")
 def dashboard_state():
-    history = list(reversed(_load_evaluation_history()))
+    history = list(reversed([_normalize_evaluation_record(record) for record in _load_evaluation_history()]))
+    latest_evaluation = None
+    if LATEST_PIPELINE_RESULT:
+        latest_evaluation = {
+            **LATEST_PIPELINE_RESULT,
+            "pipeline_results": _normalize_evaluation_record(LATEST_PIPELINE_RESULT.get("pipeline_results", {})),
+        }
     return {
         "status": "success",
         "metrics": _build_dashboard_metrics(),
-        "latest_evaluation": LATEST_PIPELINE_RESULT,
+        "latest_evaluation": latest_evaluation,
         "recent_audit": list(reversed(get_full_log()[-20:])),
         "officer_profile": get_officer_profile_data(),
         "evaluation_history": history,

@@ -3,10 +3,10 @@
     "evaluation_id": "EVAL-0001",
     "generated_at": "2026-05-07T17:50:43.158983",
     "tender_id": "PCO",
-    "bidder_name": "Date of birth:",
+    "bidder_name": "Unidentified bidder",
     "verdict": "FAIL",
     "score_percent": 0,
-    "summary": "Date of birth: scored 0% across 1 evaluated checks. Verdict: FAIL.",
+    "summary": "Unidentified bidder scored 0% across 1 evaluated checks. Verdict: FAIL.",
     "open_review_count": 0,
     "open_review_items": [],
     "missing_documents": [],
@@ -20,10 +20,10 @@
     "evaluation_id": "EVAL-0002",
     "generated_at": "2026-05-07T18:03:48.839674",
     "tender_id": "PCO",
-    "bidder_name": "Date of birth:",
+    "bidder_name": "Unidentified bidder",
     "verdict": "FAIL",
     "score_percent": 0,
-    "summary": "Date of birth: scored 0% across 1 evaluated checks. Verdict: FAIL.",
+    "summary": "Unidentified bidder scored 0% across 1 evaluated checks. Verdict: FAIL.",
     "open_review_count": 0,
     "open_review_items": [],
     "missing_documents": [],
@@ -32,5 +32,114 @@
       "Certificate"
     ],
     "latest_extracted_text": "SA M P L E B I D D I N G D O C U M E N T S October 2006 (updated January and October , 2017 to enhance environmental, social, health and safety performance) ii October 2017 This revision dated October, 2017 incorporates enhancements to the environmental, social, health and safety aspects to include additional provisions on sexual exploitation and abuse (SEA) and gender based violence (GBV). January 2017 This revision dated January, 2017 incorporates changes to enhance environmental, social, health and safety performance. November 2009 Revision This version 2 incorporates the Fraud and Corruption clauses of the Procurement Guidelines and are reflected in ITB 3.1 (Corrupt Practices), ITB 4.4 (Eligible Bidders), GC 11.6 (Contractor’s Responsibilities ), and GC 59.2.1 (Termination). October 2006 revision This revision dated October 2006 incorporates the following changes: Section I - Instructions to Bidders  para. 16.1: \"...requirement of works and completion times\" was replaced by \"... requirements of Section VI, Specifications\"  para. 29.3: \"Section VI, Works Requirements\" was replaced by \"Section VI, Specifications\". Section III: Evaluation and Qualification Criteria  (Following "
+  },
+  {
+    "evaluation_id": "EVAL-0003",
+    "generated_at": "2026-05-07T21:04:56.876160",
+    "tender_id": "Tend",
+    "bidder_name": "Unidentified bidder",
+    "verdict": "PASS",
+    "score_percent": 0,
+    "summary": "Unidentified bidder scored 0% across 0 evaluated checks. Verdict: PASS.",
+    "open_review_count": 0,
+    "open_review_items": [],
+    "missing_documents": [],
+    "document_count": 1,
+    "document_types": [
+      "Certificate"
+    ],
+    "latest_extracted_text": "Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT GOVERNMENT OF INDIA MINISTRY OF SURFACE TRANSPORT DEPARTMENT OF ROAD TRANSPORT & HIGHWAY Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT Original (PAGE REPLACED ) GOVERNMENT OF _______________________ ___________________________________________________ _____ PROJECT AGREEMENT NO. ________________________________ NATIONAL COMPETITIVE BIDDING (CIVIL WORKS) NAME OF WORK : ________________________________ PERIOD OF SALE OF : FROM _______________________ ___ BIDDING DOCUMENT TO______________________________ TIME AND DATE OF : DATE________TIME_______HOURS PRE-BID CONFERENCE LAST DATE AND TIME FOR : DATE________TIME_______H OURS RECEIPT OF BIDS *TIME AND DATE OF OPENING : DATE________TIME______ _HOURS TECHNICAL BIDS *TIME AND DATE OF OPENING : TO BE ANNOUNCED FINANCIAL BIDS PLACE OF OPENING OF BIDS : ________________________ ________ - : ________________________________ - : ________________________________ OFFICER INVITING BIDS : _________________________ _______ * Should be the same as for the deadline for receipt of bids or promptly thereafter. "
+  },
+  {
+    "evaluation_id": "EVAL-0004",
+    "generated_at": "2026-05-07T21:10:50.866352",
+    "tender_id": "Tend",
+    "bidder_name": "Unidentified bidder (bidder.pdf)",
+    "verdict": "PASS",
+    "score_percent": 0,
+    "summary": "Unidentified bidder (bidder.pdf) scored 0% across 0 evaluated checks. Verdict: PASS.",
+    "open_review_count": 0,
+    "open_review_items": [],
+    "missing_documents": [],
+    "document_count": 1,
+    "document_types": [
+      "Certificate"
+    ],
+    "upload_run_id": "20260507_211046_632649_Tend",
+    "saved_tender": {
+      "original_filename": "MTD Goods NIC.pdf",
+      "stored_filename": "tender_MTD_Goods_NIC.pdf",
+      "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\20260507_211046_632649_Tend\\tender_MTD_Goods_NIC.pdf",
+      "saved_url": "/uploads/20260507_211046_632649_Tend/tender_MTD_Goods_NIC.pdf",
+      "size_bytes": 2461578
+    },
+    "saved_documents": [
+      {
+        "original_filename": "bidder.pdf",
+        "stored_filename": "bidder_01_bidder.pdf",
+        "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\20260507_211046_632649_Tend\\bidder_01_bidder.pdf",
+        "saved_url": "/uploads/20260507_211046_632649_Tend/bidder_01_bidder.pdf",
+        "size_bytes": 439555
+      }
+    ],
+    "latest_extracted_text": "Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT GOVERNMENT OF INDIA MINISTRY OF SURFACE TRANSPORT DEPARTMENT OF ROAD TRANSPORT & HIGHWAY Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT Original (PAGE REPLACED ) GOVERNMENT OF _______________________ ___________________________________________________ _____ PROJECT AGREEMENT NO. ________________________________ NATIONAL COMPETITIVE BIDDING (CIVIL WORKS) NAME OF WORK : ________________________________ PERIOD OF SALE OF : FROM _______________________ ___ BIDDING DOCUMENT TO______________________________ TIME AND DATE OF : DATE________TIME_______HOURS PRE-BID CONFERENCE LAST DATE AND TIME FOR : DATE________TIME_______H OURS RECEIPT OF BIDS *TIME AND DATE OF OPENING : DATE________TIME______ _HOURS TECHNICAL BIDS *TIME AND DATE OF OPENING : TO BE ANNOUNCED FINANCIAL BIDS PLACE OF OPENING OF BIDS : ________________________ ________ - : ________________________________ - : ________________________________ OFFICER INVITING BIDS : _________________________ _______ * Should be the same as for the deadline for receipt of bids or promptly thereafter. "
+  },
+  {
+    "evaluation_id": "BID-0005",
+    "source": "manual_bidder_entry",
+    "generated_at": "2026-05-07T21:22:41.568981",
+    "tender_id": "KDJFHGDVHB",
+    "bidder_name": "SRV Organization",
+    "verdict": "PASS",
+    "bid_amount": "12345678",
+    "score_percent": null,
+    "summary": "Manual bidder record for SRV Organization under tender KDJFHGDVHB. Bid amount: Rs. 12345678.",
+    "open_review_count": 0,
+    "open_review_items": [],
+    "missing_documents": [],
+    "document_count": 1,
+    "document_types": [
+      "Manual Upload"
+    ],
+    "upload_run_id": "manual_20260507_212241_565368_KDJFHGDVHB",
+    "saved_documents": [
+      {
+        "original_filename": "bidder_01_bidder.pdf",
+        "stored_filename": "manual_01_bidder_01_bidder.pdf",
+        "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\manual_20260507_212241_565368_KDJFHGDVHB\\manual_01_bidder_01_bidder.pdf",
+        "saved_url": "/uploads/manual_20260507_212241_565368_KDJFHGDVHB/manual_01_bidder_01_bidder.pdf",
+        "size_bytes": 439555
+      }
+    ],
+    "latest_extracted_text": ""
+  },
+  {
+    "evaluation_id": "BID-0006",
+    "source": "manual_bidder_entry",
+    "generated_at": "2026-05-07T21:27:35.598616",
+    "tender_id": "SANDALWOOD TENDER",
+    "bidder_name": "GHK Organization",
+    "verdict": "PASS",
+    "bid_amount": "1233455",
+    "score_percent": null,
+    "summary": "Manual bidder record for GHK Organization under tender SANDALWOOD TENDER. Bid amount: Rs. 1233455.",
+    "open_review_count": 0,
+    "open_review_items": [],
+    "missing_documents": [],
+    "document_count": 1,
+    "document_types": [
+      "Manual Upload"
+    ],
+    "upload_run_id": "manual_20260507_212735_592613_SANDALWOOD_TENDER",
+    "saved_documents": [
+      {
+        "original_filename": "tender_MTD_Goods_NIC.pdf",
+        "stored_filename": "manual_01_tender_MTD_Goods_NIC.pdf",
+        "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\manual_20260507_212735_592613_SANDALWOOD_TENDER\\manual_01_tender_MTD_Goods_NIC.pdf",
+        "saved_url": "/uploads/manual_20260507_212735_592613_SANDALWOOD_TENDER/manual_01_tender_MTD_Goods_NIC.pdf",
+        "size_bytes": 2461578
+      }
+    ],
+    "latest_extracted_text": ""
   }
 ]

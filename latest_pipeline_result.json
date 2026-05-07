@@ -1,24 +1,32 @@
 {
-  "generated_at": "2026-05-07T18:03:48.839674",
+  "generated_at": "2026-05-07T21:10:50.866352",
   "pipeline_results": {
-    "tender_id": "PCO",
-    "bidder_name": "Date of birth:",
+    "upload_run_id": "20260507_211046_632649_Tend",
+    "saved_tender": {
+      "original_filename": "MTD Goods NIC.pdf",
+      "stored_filename": "tender_MTD_Goods_NIC.pdf",
+      "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\20260507_211046_632649_Tend\\tender_MTD_Goods_NIC.pdf",
+      "saved_url": "/uploads/20260507_211046_632649_Tend/tender_MTD_Goods_NIC.pdf",
+      "size_bytes": 2461578
+    },
+    "tender_id": "Tend",
+    "bidder_name": "UNKNOWN",
     "bidder_profile": {
-      "entity_name": "Date of birth:",
+      "entity_name": null,
       "annual_turnover_lakhs": null,
       "emd_amount": null,
-      "experience_years": 18,
+      "experience_years": 15,
       "document_types": [
         "Certificate"
       ],
       "submitted_document_count": 1
     },
     "tender_checklist": {
-      "tender_title": "AN ISO 9001 & 14001 COMPANY",
-      "tender_id": "PCO",
+      "tender_title": "Model Tender Document",
+      "tender_id": "Tend",
       "financial_requirements": {
         "minimum_turnover_lakhs": null,
-        "earnest_money_deposit": 109076
+        "earnest_money_deposit": null
       },
       "technical_requirements": [],
       "statutory_documents_required": [],
@@ -27,20 +35,29 @@
     "extracted_documents": [
       {
         "document_type": "Certificate",
-        "entity_name": "Date of birth:",
+        "entity_name": "",
         "registration_number": null,
         "address": null,
         "validity_date": null,
         "key_fields": {
-          "experience_years": 18
+          "experience_years": 15
         },
         "confidence_score": 0.97,
         "needs_human_review": false,
-        "source_text_excerpt": "SA M P L E B I D D I N G D O C U M E N T S October 2006 (updated January and October , 2017 to enhance environmental, social, health and safety performance) ii October 2017 This revision dated October, 2017 incorporates enhancements to the environmental, social, health and safety aspects to include additional provisions on sexual exploitation and abuse (SEA) and gender based violence (GBV). January 2017 This revision dated January, 2017 incorporates changes to enhance environmental, social, health and safety performance. November 2009 Revision This version 2 incorporates the Fraud and Corruption clauses of the Procurement Guidelines and are reflected in ITB 3.1 (Corrupt Practices), ITB 4.4 (Eligible Bidders), GC 11.6 (Contractor’s Responsibilities ), and GC 59.2.1 (Termination). October 2006 revision This revision dated October 2006 incorporates the following changes: Section I - Instructions to Bidders  para. 16.1: \"...requirement of works and completion times\" was replaced by \"... requirements of Section VI, Specifications\"  para. 29.3: \"Section VI, Works Requirements\" was replaced by \"Section VI, Specifications\". Section III: Evaluation and Qualification Criteria  (Following ",
-        "source_filename": "SBDWorksOPRCOct2017.pdf",
+        "source_text_excerpt": "Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT GOVERNMENT OF INDIA MINISTRY OF SURFACE TRANSPORT DEPARTMENT OF ROAD TRANSPORT & HIGHWAY Original STANDARD BIDDING DOCUMENT PROCUREMENT OF CIVIL WORKS PART I: COMPLETE BIDDING DOCUMENT Original (PAGE REPLACED ) GOVERNMENT OF _______________________ ___________________________________________________ _____ PROJECT AGREEMENT NO. ________________________________ NATIONAL COMPETITIVE BIDDING (CIVIL WORKS) NAME OF WORK : ________________________________ PERIOD OF SALE OF : FROM _______________________ ___ BIDDING DOCUMENT TO______________________________ TIME AND DATE OF : DATE________TIME_______HOURS PRE-BID CONFERENCE LAST DATE AND TIME FOR : DATE________TIME_______H OURS RECEIPT OF BIDS *TIME AND DATE OF OPENING : DATE________TIME______ _HOURS TECHNICAL BIDS *TIME AND DATE OF OPENING : TO BE ANNOUNCED FINANCIAL BIDS PLACE OF OPENING OF BIDS : ________________________ ________ - : ________________________________ - : ________________________________ OFFICER INVITING BIDS : _________________________ _______ * Should be the same as for the deadline for receipt of bids or promptly thereafter. ",
+        "source_filename": "bidder.pdf",
         "mime_type": "application/pdf",
         "doc_type_input": "certificate",
-        "experience_years": 18
+        "experience_years": 15,
+        "saved_file": {
+          "original_filename": "bidder.pdf",
+          "stored_filename": "bidder_01_bidder.pdf",
+          "saved_path": "C:\\Users\\vaima\\OneDrive\\Desktop\\BHARATH AI\\bharat-procure-ai\\uploaded_documents\\20260507_211046_632649_Tend\\bidder_01_bidder.pdf",
+          "saved_url": "/uploads/20260507_211046_632649_Tend/bidder_01_bidder.pdf",
+          "size_bytes": 439555
+        },
+        "saved_url": "/uploads/20260507_211046_632649_Tend/bidder_01_bidder.pdf",
+        "saved_size_bytes": 439555
       }
     ],
     "consistency_audit": {
@@ -48,11 +65,9 @@
       "checks": [
         {
           "field": "entity_name",
-          "status": "MATCH",
-          "values_found": [
-            "Date of birth:"
-          ],
-          "note": "Entity Name matches across documents"
+          "status": "MISSING",
+          "values_found": [],
+          "note": "No entity_name found across submitted documents"
         },
         {
           "field": "address",
@@ -66,23 +81,13 @@
     },
     "financial_rules": {
       "financial_check_summary": {
-        "total_checks": 1,
+        "total_checks": 0,
         "passed": 0,
-        "failed": 1,
-        "overall": "FAIL"
+        "failed": 0,
+        "overall": "PASS"
       },
-      "detailed_results": [
-        {
-          "check": "Earnest Money Deposit",
-          "required": "₹109076",
-          "found": "NOT PROVIDED",
-          "status": "FAIL",
-          "note": "EMD proof document missing — mandatory disqualification"
-        }
-      ],
-      "disqualification_flags": [
-        "EMD proof not submitted — mandatory requirement"
-      ]
+      "detailed_results": [],
+      "disqualification_flags": []
     },
     "statutory_rules": {
       "statutory_check_summary": {
@@ -95,41 +100,22 @@
       "missing_documents": []
     },
     "final_verdict": {
-      "bidder_verdict": "FAIL",
+      "bidder_verdict": "PASS",
       "score_percent": 0,
-      "criteria_results": [
-        {
-          "criterion": "Earnest Money Deposit",
-          "status": "NOT_MET",
-          "evidence": "NOT PROVIDED",
-          "note": "EMD proof document missing — mandatory disqualification"
-        }
-      ],
-      "disqualification_reasons": [
-        "Earnest Money Deposit: EMD proof document missing — mandatory disqualification"
-      ],
+      "criteria_results": [],
+      "disqualification_reasons": [],
       "human_review_items": [],
-      "summary": "Date of birth: scored 0% across 1 evaluated checks. Verdict: FAIL.",
+      "summary": "Bidder scored 0% across 0 evaluated checks. Verdict: PASS.",
       "supporting_checks": {
         "financial_rules": {
           "financial_check_summary": {
-            "total_checks": 1,
+            "total_checks": 0,
             "passed": 0,
-            "failed": 1,
-            "overall": "FAIL"
+            "failed": 0,
+            "overall": "PASS"
           },
-          "detailed_results": [
-            {
-              "check": "Earnest Money Deposit",
-              "required": "₹109076",
-              "found": "NOT PROVIDED",
-              "status": "FAIL",
-              "note": "EMD proof document missing — mandatory disqualification"
-            }
-          ],
-          "disqualification_flags": [
-            "EMD proof not submitted — mandatory requirement"
-          ]
+          "detailed_results": [],
+          "disqualification_flags": []
         },
         "statutory_rules": {
           "statutory_check_summary": {
@@ -143,6 +129,6 @@
         }
       }
     },
-    "generated_at": "2026-05-07T18:03:48.839674"
+    "generated_at": "2026-05-07T21:10:50.866352"
   }
 }

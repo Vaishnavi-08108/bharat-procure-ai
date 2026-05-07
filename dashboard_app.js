@@ -1,4 +1,27 @@
-const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin;
+const DEFAULT_API_BASE = "http://127.0.0.1:8000";
+
+function resolveApiBase() {
+  const params = new URLSearchParams(window.location.search);
+  const override = params.get("api") || window.localStorage.getItem("bharatProcureApiBase");
+  if (override) {
+    return override.replace(/\/$/, "");
+  }
+
+  if (window.location.protocol === "file:") {
+    return DEFAULT_API_BASE;
+  }
+
+  const isFastApiUi = window.location.pathname.startsWith("/ui/");
+  const isBackendPort = window.location.port === "8000";
+  if (isFastApiUi || isBackendPort) {
+    return window.location.origin;
+  }
+
+  const isLocalStaticServer = ["localhost", "127.0.0.1", ""].includes(window.location.hostname);
+  return isLocalStaticServer ? DEFAULT_API_BASE : window.location.origin;
+}
+
+const API_BASE = resolveApiBase();
 const PAGE_ID = document.body.dataset.page || "dashboard";
 
 const appState = {
@@ -170,7 +193,10 @@ async function hydrateState() {
 
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, options);
-  const data = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : { error: await response.text() };
   if (!response.ok || data.error) {
     throw new Error(data.error || `Request failed for ${path}`);
   }
@@ -240,7 +266,7 @@ function renderDashboardPage() {
     </section>
 
     <section class="grid-2">
-      <article class="page-card searchable" data-search-text="${escapeHtml(searchBlob(latest?.bidder_name, latest?.tender_id, latestVerdict.summary))}">
+        <article class="page-card searchable" data-search-text="${escapeHtml(searchBlob(getDisplayBidderName(latest), latest?.tender_id, latestVerdict.summary))}">
         <div class="section-header">
           <div>
             <div class="section-title">Latest Evaluation</div>
@@ -255,7 +281,7 @@ function renderDashboardPage() {
           </div>
           <p style="margin-top:12px">${escapeHtml(latestVerdict.summary || "No summary available.")}</p>
           <div class="pill-row" style="margin-top:16px">
-            <span class="tag info">${escapeHtml(latest.bidder_name || "Unknown bidder")}</span>
+            <span class="tag info">${escapeHtml(getDisplayBidderName(latest))}</span>
             <span class="tag ${latestVerdict.human_review_items?.length ? "warning" : "success"}">${escapeHtml(`${latestVerdict.human_review_items?.length || 0} review item(s)`)}</span>
           </div>
         ` : `<div class="notice">Run an evaluation on the Upload Tender page to populate live dashboard data.</div>`}
@@ -284,8 +310,8 @@ function renderDashboardPage() {
         ${historyCards.length ? `
           <div class="grid-3">
             ${historyCards.map((item) => `
-              <div class="page-card searchable" data-search-text="${escapeHtml(searchBlob(item.bidder_name, item.tender_id, item.summary))}">
-                <h3>${escapeHtml(item.bidder_name || "Unknown bidder")}</h3>
+              <div class="page-card searchable" data-search-text="${escapeHtml(searchBlob(getDisplayBidderName(item), item.tender_id, item.summary))}">
+                <h3>${escapeHtml(getDisplayBidderName(item))}</h3>
                 <p>${escapeHtml(item.summary || "No summary available.")}</p>
                 <div class="pill-row" style="margin-top:14px">
                   ${renderVerdictTag(item.verdict)}
@@ -346,10 +372,12 @@ function renderUploadPage() {
           </div>
         </div>
         <div class="button-row" style="margin-top:16px">
-          <button class="btn btn-primary" id="runPipelineBtn">${appState.upload.running ? "Running..." : "Run Live Evaluation"}</button>
+          <button class="btn btn-primary" id="runPipelineBtn" ${appState.upload.running ? "disabled" : ""}>${appState.upload.running ? "Running..." : "Run Live Evaluation"}</button>
           <button class="btn btn-secondary" id="clearUploadBtn">Clear Selection</button>
+          ${activeResult?.saved_tender?.saved_url ? `<a class="btn btn-secondary" href="${escapeHtml(resolveApiResource(activeResult.saved_tender.saved_url))}" target="_blank" rel="noreferrer">Open Saved Tender</a>` : ""}
         </div>
         <div class="helper-text" id="uploadStatusText" style="margin-top:14px">${escapeHtml(getUploadStatusText())}</div>
+        ${activeResult?.upload_run_id ? `<div class="helper-text" style="margin-top:8px">Saved run: ${escapeHtml(activeResult.upload_run_id)}</div>` : ""}
       </div>
     </section>
 
@@ -370,6 +398,12 @@ function renderUploadPage() {
             </button>
           `).join("") : `<div class="notice">No uploaded results yet. After a run, each uploaded file will appear here with its extracted text.</div>`}
         </div>
+        ${selectedDoc?.saved_url ? `
+          <div class="button-row" style="margin-top:16px">
+            <a class="btn btn-secondary" href="${escapeHtml(resolveApiResource(selectedDoc.saved_url))}" target="_blank" rel="noreferrer">Open Saved File</a>
+            <span class="tag success">${escapeHtml(formatFileSize(selectedDoc.saved_size_bytes))} saved</span>
+          </div>
+        ` : ""}
         <div class="document-preview" style="margin-top:16px">${escapeHtml(selectedDoc?.source_text_excerpt || "AI extracted text will appear here after evaluation.")}</div>
       </article>
 
@@ -377,7 +411,7 @@ function renderUploadPage() {
         <div class="section-header">
           <div>
             <div class="section-title">Criteria & Officer Actions</div>
-            <div class="section-subtitle">${escapeHtml(activeResult?.bidder_name || "No bidder loaded")}</div>
+            <div class="section-subtitle">${escapeHtml(activeResult ? getDisplayBidderName(activeResult) : "No bidder loaded")}</div>
           </div>
         </div>
         ${criteria.length ? `
@@ -504,7 +538,7 @@ async function runUploadPipeline() {
     await hydrateState();
     renderGlobalChrome();
     renderPage();
-    showToast("Live evaluation completed.");
+    showToast("Live evaluation completed and documents saved.");
   } catch (error) {
     showToast(error.message || "The live evaluation failed.");
   } finally {
@@ -517,8 +551,50 @@ function renderBiddersPage() {
   dom.pageRoot.innerHTML = `
     <section class="page-header">
       <h1>All Bidders</h1>
-      <p>Every bidder evaluation recorded so far. This page uses stored evaluation history instead of placeholder rows.</p>
+      <p>Add bidder information, attach submitted documents for review, and track every recorded bidder decision.</p>
     </section>
+
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Add Bidder Information</div>
+          <div class="section-subtitle">Saved to bidder history with review document links.</div>
+        </div>
+      </div>
+      <form id="manualBidderForm" enctype="multipart/form-data">
+        <div class="field-grid">
+          <div class="field-block">
+            <label for="manualBidderName">Bidder Name</label>
+            <input id="manualBidderName" name="bidder_name" placeholder="ABC Infra Pvt Ltd" required>
+          </div>
+          <div class="field-block">
+            <label for="manualTenderId">Tender Taken</label>
+            <input id="manualTenderId" name="tender_id" placeholder="Tender ID or tender name" required>
+          </div>
+          <div class="field-block">
+            <label for="manualVerdict">Verdict</label>
+            <select id="manualVerdict" name="verdict">
+              <option value="REFER_TO_COMMITTEE">Review</option>
+              <option value="PASS">Pass</option>
+              <option value="FAIL">Fail</option>
+            </select>
+          </div>
+          <div class="field-block">
+            <label for="manualBidAmount">Amount</label>
+            <input id="manualBidAmount" name="bid_amount" inputmode="decimal" placeholder="1250000">
+          </div>
+          <div class="field-block" style="grid-column:1 / -1">
+            <label for="manualBidderDocs">Uploaded Documents For Review</label>
+            <input id="manualBidderDocs" name="documents" type="file" accept=".pdf,.png,.jpg,.jpeg" multiple>
+          </div>
+        </div>
+        <div class="button-row" style="margin-top:18px">
+          <button class="btn btn-primary" type="submit">Save Bidder</button>
+          <button class="btn btn-secondary" type="reset">Clear Form</button>
+        </div>
+      </form>
+    </section>
+
     <section class="panel">
       <div class="section-header">
         <div>
@@ -534,18 +610,20 @@ function renderBiddersPage() {
                 <th>Bidder</th>
                 <th>Tender</th>
                 <th>Verdict</th>
-                <th>Score</th>
+                <th>Amount</th>
+                <th>Documents</th>
                 <th>Review</th>
                 <th>Updated</th>
               </tr>
             </thead>
             <tbody>
               ${appState.history.map((item) => `
-                <tr class="searchable" data-search-text="${escapeHtml(searchBlob(item.bidder_name, item.tender_id, item.summary, item.verdict))}">
-                  <td>${escapeHtml(item.bidder_name || "Unknown bidder")}</td>
+                <tr class="searchable" data-search-text="${escapeHtml(searchBlob(getDisplayBidderName(item), item.tender_id, item.summary, item.verdict, item.bid_amount, getDocumentSearchText(item)))}">
+                  <td>${escapeHtml(getDisplayBidderName(item))}</td>
                   <td>${escapeHtml(item.tender_id || "UNKNOWN")}</td>
                   <td>${renderVerdictTag(item.verdict)}</td>
-                  <td>${escapeHtml(item.score_percent != null ? `${item.score_percent}%` : "--")}</td>
+                  <td>${escapeHtml(formatBidAmount(item.bid_amount))}</td>
+                  <td>${renderRecordDocuments(item)}</td>
                   <td>${escapeHtml(`${item.open_review_count || 0} item(s)`)}</td>
                   <td>${escapeHtml(formatDateTime(item.generated_at))}</td>
                 </tr>
@@ -556,6 +634,38 @@ function renderBiddersPage() {
       ` : `<div class="notice">No bidder evaluations have been recorded yet.</div>`}
     </section>
   `;
+
+  bindManualBidderForm();
+}
+
+function bindManualBidderForm() {
+  const form = document.getElementById("manualBidderForm");
+  form?.addEventListener("submit", saveManualBidder);
+}
+
+async function saveManualBidder(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "Saving...";
+
+  try {
+    await fetchJson("/manual-bidders", {
+      method: "POST",
+      body: new FormData(form),
+    });
+    form.reset();
+    await hydrateState();
+    renderGlobalChrome();
+    renderPage();
+    showToast("Bidder information saved.");
+  } catch (error) {
+    showToast(error.message || "Could not save bidder information.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "Save Bidder";
+  }
 }
 
 function renderActiveEvalsPage() {
@@ -567,10 +677,10 @@ function renderActiveEvalsPage() {
     </section>
     <section class="grid-2">
       ${(flagged.length ? flagged : appState.history.slice(0, 2)).map((item) => `
-        <article class="page-card searchable" data-search-text="${escapeHtml(searchBlob(item.bidder_name, item.tender_id, item.summary, item.open_review_items?.join(" ")))}">
+        <article class="page-card searchable" data-search-text="${escapeHtml(searchBlob(getDisplayBidderName(item), item.tender_id, item.summary, item.open_review_items?.join(" ")))}">
           <div class="section-header">
             <div>
-              <div class="section-title">${escapeHtml(item.bidder_name || "Unknown bidder")}</div>
+              <div class="section-title">${escapeHtml(getDisplayBidderName(item))}</div>
               <div class="section-subtitle">${escapeHtml(item.tender_id || "UNKNOWN")}</div>
             </div>
             ${renderVerdictTag(item.verdict)}
@@ -804,7 +914,7 @@ function renderHelpPage() {
           </div>
           <div class="list-item">
             <strong>Latest Evaluation</strong><br>
-            <span class="muted">${escapeHtml(appState.latest?.bidder_name || "No live evaluation yet")}</span>
+            <span class="muted">${escapeHtml(appState.latest ? getDisplayBidderName(appState.latest) : "No live evaluation yet")}</span>
           </div>
         </div>
       </article>
@@ -879,6 +989,83 @@ function buildCriteria(result) {
   return result?.final_verdict?.criteria_results || [];
 }
 
+function getDisplayBidderName(item) {
+  const rawName = typeof item === "string" ? item : item?.bidder_name || item?.bidder_profile?.entity_name;
+  const cleaned = String(rawName || "").replace(/^[:\s;-]+|[:\s;-]+$/g, "");
+  const lowered = cleaned.toLowerCase();
+  const invalidNames = new Set(["", "unknown", "date of birth", "dob", "name", "address"]);
+  const invalidPhrases = ["date of birth", "standard bidding document", "procurement of civil works"];
+
+  if (cleaned && !invalidNames.has(lowered) && !invalidPhrases.some((phrase) => lowered.includes(phrase))) {
+    return cleaned;
+  }
+
+  const savedDocument = item?.saved_documents?.[0] || item?.extracted_documents?.[0]?.saved_file;
+  const sourceFilename = savedDocument?.original_filename || savedDocument?.stored_filename || item?.extracted_documents?.[0]?.source_filename;
+  return bidderLabelFromFilename(sourceFilename);
+}
+
+function getRecordDocuments(item) {
+  const docs = [];
+  if (item?.saved_tender?.saved_url) {
+    docs.push({ ...item.saved_tender, label: "Tender" });
+  }
+  (item?.saved_documents || []).forEach((document, index) => {
+    docs.push({ ...document, label: `Doc ${index + 1}` });
+  });
+  (item?.extracted_documents || []).forEach((document, index) => {
+    const savedFile = document.saved_file || null;
+    if (savedFile?.saved_url && !docs.some((itemDoc) => itemDoc.saved_url === savedFile.saved_url)) {
+      docs.push({ ...savedFile, label: `Doc ${index + 1}` });
+    }
+  });
+  return docs;
+}
+
+function renderRecordDocuments(item) {
+  const docs = getRecordDocuments(item);
+  if (!docs.length) return `<span class="muted">No documents</span>`;
+  return `
+    <div class="table-doc-links">
+      ${docs.slice(0, 4).map((document) => `
+        <a class="tag info" href="${escapeHtml(resolveApiResource(document.saved_url))}" target="_blank" rel="noreferrer">
+          ${escapeHtml(document.label || document.original_filename || "Document")}
+        </a>
+      `).join("")}
+      ${docs.length > 4 ? `<span class="tag warning">${escapeHtml(`+${docs.length - 4}`)}</span>` : ""}
+    </div>
+  `;
+}
+
+function getDocumentSearchText(item) {
+  return getRecordDocuments(item)
+    .map((document) => `${document.label || ""} ${document.original_filename || ""} ${document.stored_filename || ""}`)
+    .join(" ");
+}
+
+function formatBidAmount(amount) {
+  const rawValue = String(amount || "").trim();
+  if (!rawValue) return "--";
+  const numericValue = Number(rawValue.replace(/,/g, ""));
+  if (Number.isFinite(numericValue)) {
+    return `Rs. ${numericValue.toLocaleString("en-IN")}`;
+  }
+  return rawValue.startsWith("Rs.") ? rawValue : `Rs. ${rawValue}`;
+}
+
+function bidderLabelFromFilename(filename) {
+  if (!filename) return "Unidentified bidder";
+  const baseName = String(filename).split(/[\\/]/).pop();
+  const nameWithoutExt = baseName.replace(/\.[^.]+$/, "");
+  const cleaned = nameWithoutExt
+    .replace(/^(?:bidder|document|doc|file)[_-]*\d*[_-]*/i, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+
+  if (!cleaned) return `Unidentified bidder (${baseName})`;
+  return cleaned.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function inferDocType(file) {
   const name = file.name.toLowerCase();
   if (name.includes("gst")) return "gst_certificate";
@@ -890,6 +1077,19 @@ function inferDocType(file) {
   if (name.includes("iso")) return "iso_certificate";
   if (name.includes("experience") || name.includes("contract")) return "experience_certificate";
   return "certificate";
+}
+
+function resolveApiResource(path) {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return "0 KB";
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function getUploadStatusText() {
